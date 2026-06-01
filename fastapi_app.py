@@ -33,7 +33,11 @@ from mssql_sql_generator import generate_tsql, generate_answer_summary
 from mssql_executor import validate_tsql, execute_tsql
 from ollama_client import list_ollama_models
 from audit_logger import log_query   # see audit_logger.py
-
+from session_manager import (
+    create_session,
+    get_session,
+    remove_session
+)
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
@@ -87,33 +91,21 @@ class ConnectRequest(BaseModel):
 
 
 class SchemaRequest(BaseModel):
-    server: str
-    database: str
-    auth_mode: str
-    username: Optional[str] = None
-    password: Optional[str] = None
-    driver: Optional[str] = None
-    tables: list[str]                 # ["dbo.Orders", "dbo.Customers"]
-
+    session_id: str
+    tables: list[str]
 
 class AskRequest(BaseModel):
-    server: str
-    database: str
-    auth_mode: str
-    username: Optional[str] = None
-    password: Optional[str] = None
-    driver: Optional[str] = None
+    session_id: str
     tables: list[str]
     question: str
-    model: Optional[str] = None      # Ollama model name; omit for default
-
+    model: Optional[str] = None
 
 class ConnectResponse(BaseModel):
+    session_id: str
     status: str
     database: str
     table_count: int
     tables: list[str]
-
 
 class SchemaResponse(BaseModel):
     schema_text: str
@@ -171,76 +163,173 @@ def get_models(payload: dict = Depends(verify_token)):
 
 @app.post("/connect", response_model=ConnectResponse)
 def connect(req: ConnectRequest, payload: dict = Depends(verify_token)):
+
     conn = _get_conn(req)
+
     try:
+
         tables = get_all_tables(conn)
-        table_labels = [f"{s}.{t}" for s, t in tables]
+
+        table_labels = [
+            f"{s}.{t}"
+            for s, t in tables
+        ]
+
+        session_id = create_session({
+            "server": req.server,
+            "database": req.database,
+            "auth_mode": req.auth_mode,
+            "username": req.username,
+            "password": req.password,
+            "driver": req.driver
+        })
+
         return ConnectResponse(
+            session_id=session_id,
             status="connected",
             database=req.database,
             table_count=len(tables),
             tables=table_labels,
         )
-    finally:
-        conn.close()
 
+    finally:
+
+        conn.close()
 
 @app.post("/schema", response_model=SchemaResponse)
-def schema(req: SchemaRequest, payload: dict = Depends(verify_token)):
-    if not req.tables:
-        raise HTTPException(status_code=400, detail="Provide at least one table.")
-    conn = _get_conn(req)
+def schema(req: SchemaRequest,
+           payload: dict = Depends(verify_token)):
+
+    session = get_session(req.session_id)
+
+    if not session:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Invalid session."
+        )
+
+    conn = connect_mssql(
+        server=session["server"],
+        database=session["database"],
+        auth_mode=session["auth_mode"],
+        username=session["username"],
+        password=session["password"],
+        driver=session["driver"]
+    )
+
     try:
-        selected = [_parse_table(t) for t in req.tables]
-        schema_text = get_selected_schema_text(conn, selected)
-        return SchemaResponse(schema_text=schema_text)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        
+        if not req.tables:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide at least one table.")
+        selected = [
+            _parse_table(t)
+            for t in req.tables
+        ]
+    
+
+        schema_text = get_selected_schema_text(
+            conn,
+            selected
+        )
+
+        return SchemaResponse(
+            schema_text=schema_text
+        )
+
     finally:
+
         conn.close()
-
-
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest, payload: dict = Depends(verify_token)):
-    if not req.tables:
-        raise HTTPException(status_code=400, detail="Provide at least one table.")
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    conn = _get_conn(req)
+    if not req.tables:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one table."
+        )
+
+    if not req.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty."
+        )
+
+    session = get_session(req.session_id)
+
+    if not session:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Invalid session."
+        )
+
+    conn = connect_mssql(
+        server=session["server"],
+        database=session["database"],
+        auth_mode=session["auth_mode"],
+        username=session["username"],
+        password=session["password"],
+        driver=session["driver"]
+    )
+
     user_id = payload.get("sub", "unknown")
 
     try:
-        selected = [_parse_table(t) for t in req.tables]
-        schema_text = get_selected_schema_text(conn, selected)
 
-        # Generate T-SQL
-        sql = generate_tsql(req.question, schema_text, model=req.model)
+        selected = [
+            _parse_table(t)
+            for t in req.tables
+        ]
 
-        # Safety check
-        is_safe, reason = validate_tsql(sql)
-        if not is_safe:
-            logger.warning("Blocked query from user=%s: %s", user_id, reason)
-            raise HTTPException(status_code=400, detail=f"Unsafe query blocked: {reason}")
-
-        # Execute
-        columns, rows = execute_tsql(conn, sql)
-
-        # AI summary
-        answer = generate_answer_summary(
-            req.question, sql, columns, rows, model=req.model
+        schema_text = get_selected_schema_text(
+            conn,
+            selected
         )
 
-        # Audit log
+        sql = generate_tsql(
+            req.question,
+            schema_text,
+            model=req.model
+        )
+
+        is_safe, reason = validate_tsql(sql)
+
+        if not is_safe:
+
+            logger.warning(
+                "Blocked query from user=%s: %s",
+                user_id,
+                reason
+            )
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsafe query blocked: {reason}"
+            )
+
+        columns, rows = execute_tsql(
+            conn,
+            sql
+        )
+
+        answer = generate_answer_summary(
+            req.question,
+            sql,
+            columns,
+            rows,
+            model=req.model
+        )
+
         log_query(
             user_id=user_id,
             question=req.question,
             sql=sql,
             row_count=len(rows),
             tables=req.tables,
-            database=req.database,
+            database=session["database"],
         )
 
         return AskResponse(
@@ -254,8 +343,36 @@ def ask(req: AskRequest, payload: dict = Depends(verify_token)):
 
     except HTTPException:
         raise
+
     except Exception as exc:
-        logger.error("Error processing ask request: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+
+        logger.error(
+            "Error processing ask request: %s",
+            exc
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc)
+        )
+
     finally:
+
         conn.close()
+
+class DisconnectRequest(BaseModel):
+    session_id: str
+    
+@app.post("/disconnect")
+def disconnect(
+        req: DisconnectRequest,
+        payload: dict = Depends(verify_token)
+):
+
+    remove_session(
+        req.session_id
+    )
+
+    return {
+        "status": "disconnected"
+    }
