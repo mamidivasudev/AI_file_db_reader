@@ -1,0 +1,8 @@
+streamlit
+mysql-connector-python
+ollama
+pyodbc
+fastapi
+uvicorn[standard]
+python-jose[cryptography]
+pydantic
