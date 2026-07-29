@@ -128,7 +128,6 @@ class AskResponse(BaseModel):
 class AskFilesResponse(BaseModel):
     question: str
     answer: str
-    matched_files: list[str]
 
 
 # ─────────────────────────────────────────────
@@ -414,8 +413,7 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         if not matched_files:
             return AskFilesResponse(
                 question=req.question,
-                answer="No relevant information found in the documents.",
-                matched_files=[]
+                answer="No relevant information found in the documents."
             )
             
         # 3. Build prompt
@@ -426,12 +424,14 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         prompt += f"\n\nQuestion:\n{req.question}"
         
         # 4. Ask Ollama
-        answer = ask_ollama(prompt, model=req.model)
+        if req.model:
+            answer = ask_ollama(prompt, model=req.model)
+        else:
+            answer = ask_ollama(prompt)
         
         return AskFilesResponse(
             question=req.question,
-            answer=answer,
-            matched_files=[f["filename"] for f in matched_files]
+            answer=answer
         )
         
     except HTTPException:
