@@ -1,0 +1,12 @@
+streamlit
+mysql-connector-python
+ollama
+pyodbc
+fastapi
+uvicorn[standard]
+python-jose[cryptography]
+pydantic
+psycopg2-binary
+oracledb
+pymongo
+redis
