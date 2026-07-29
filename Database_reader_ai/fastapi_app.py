@@ -31,13 +31,15 @@ from mssql_connector import connect_mssql
 from mssql_schema_reader import get_all_tables, get_selected_schema_text
 from mssql_sql_generator import generate_tsql, generate_answer_summary
 from mssql_executor import validate_tsql, execute_tsql
-from ollama_client import list_ollama_models
+from ollama_client import list_ollama_models, ask_ollama
 from audit_logger import log_query   # see audit_logger.py
 from session_manager import (
     create_session,
     get_session,
     remove_session
 )
+from file_reader import read_project
+from search_engine import search_files
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
@@ -100,6 +102,10 @@ class AskRequest(BaseModel):
     question: str
     model: Optional[str] = None
 
+class AskFilesRequest(BaseModel):
+    question: str
+    model: Optional[str] = None
+
 class ConnectResponse(BaseModel):
     session_id: str
     status: str
@@ -118,6 +124,11 @@ class AskResponse(BaseModel):
     rows: list[list[Any]]
     row_count: int
     answer: str
+
+class AskFilesResponse(BaseModel):
+    question: str
+    answer: str
+    matched_files: list[str]
 
 
 # ─────────────────────────────────────────────
@@ -376,3 +387,55 @@ def disconnect(
     return {
         "status": "disconnected"
     }
+
+@app.post("/ask-query", response_model=AskFilesResponse)
+def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
+
+    if not req.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty."
+        )
+
+    try:
+        # 1. Read files from the static directory
+        static_dir = r"\\SAT-HYD-W0007\Vasu\New folder\Database_reader_ai\files"
+        files_data = read_project(static_dir)
+        
+        if not files_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No files found in {static_dir}"
+            )
+            
+        # 2. Search files
+        matched_files = search_files(req.question, files_data)
+        
+        if not matched_files:
+            return AskFilesResponse(
+                question=req.question,
+                answer="No relevant information found in the documents.",
+                matched_files=[]
+            )
+            
+        # 3. Build prompt
+        prompt = ""
+        for file in matched_files:
+            prompt += f"\n\nFILE: {file['filename']}\n"
+            prompt += file["content"][:80000]
+        prompt += f"\n\nQuestion:\n{req.question}"
+        
+        # 4. Ask Ollama
+        answer = ask_ollama(prompt, model=req.model)
+        
+        return AskFilesResponse(
+            question=req.question,
+            answer=answer,
+            matched_files=[f["filename"] for f in matched_files]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error processing ask-files request: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
