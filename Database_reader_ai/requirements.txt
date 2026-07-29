@@ -9,4 +9,7 @@ pydantic
 psycopg2-binary
 oracledb
 pymongo
-redis
+redisPyMuPDF
+pandas
+openpyxl
+python-docx

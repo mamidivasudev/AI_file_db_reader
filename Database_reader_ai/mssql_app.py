@@ -1,3 +1,10 @@
+import sys
+import asyncio
+if sys.platform == 'win32':
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 import pandas as pd
 import streamlit as st
 
@@ -582,17 +589,33 @@ with st.sidebar:
 
     # ── File Reader Mode ──
     if mode == "File Reader AI Assistant":
-        st.markdown('<p class="sidebar-section-label">Project</p>', unsafe_allow_html=True)
-        project_path = st.text_input("Folder path", placeholder="C:\\MyProject", label_visibility="collapsed")
-        if st.button("Load Project", use_container_width=True):
-            try:
-                files = read_project(project_path)
-                st.session_state["project_files"] = files
-                st.session_state["project_path"] = project_path
-                st.session_state["project_answer"] = ""
-                st.success(f"{len(files)} files loaded")
-            except Exception as e:
-                st.error(str(e))
+        st.markdown('<p class="sidebar-section-label">Upload Files</p>', unsafe_allow_html=True)
+        uploaded_files = st.file_uploader("Upload PDFs or Code", accept_multiple_files=True, label_visibility="collapsed")
+        
+        if st.button("Process Files", use_container_width=True):
+            if not uploaded_files:
+                st.warning("Please upload at least one file.")
+            else:
+                try:
+                    import tempfile
+                    import os
+                    
+                    # Create a temporary directory on the server
+                    temp_dir = tempfile.mkdtemp()
+                    
+                    # Save all uploaded files to this temporary directory
+                    for uf in uploaded_files:
+                        with open(os.path.join(temp_dir, uf.name), "wb") as f:
+                            f.write(uf.getbuffer())
+                            
+                    # Use the existing read_project function on the temporary directory
+                    files = read_project(temp_dir)
+                    st.session_state["project_files"] = files
+                    st.session_state["project_path"] = "Uploaded Files"
+                    st.session_state["project_answer"] = ""
+                    st.success(f"{len(files)} files loaded")
+                except Exception as e:
+                    st.error(str(e))
 
     # ── Database Mode connection form ──
     if mode == "Database AI Assistant":
@@ -786,7 +809,7 @@ if mode == "File Reader AI Assistant":
         prompt = ""
         for file in matched_files:
             prompt += f"\n\nFILE: {file['filename']}\n"
-            prompt += file["content"][:5000]
+            prompt += file["content"][:80000]
         prompt += f"\n\nQuestion:\n{project_question}"
 
         with st.spinner("Analysing project…"):

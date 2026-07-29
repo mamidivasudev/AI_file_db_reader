@@ -2,9 +2,9 @@ import os
 import pandas as pd
 
 try:
-    import PyPDF2
+    import fitz  # PyMuPDF
 except ImportError:
-    PyPDF2 = None
+    fitz = None
 
 try:
     import docx
@@ -47,12 +47,14 @@ def read_project(project_path):
                     lower_file = file.lower()
 
                     if lower_file.endswith(".pdf"):
-                        if PyPDF2:
-                            with open(full_path, "rb") as f:
-                                reader = PyPDF2.PdfReader(f)
-                                content = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                        if fitz:
+                            try:
+                                with fitz.open(full_path) as doc:
+                                    content = "\n".join([page.get_text() for page in doc])
+                            except Exception as pdf_e:
+                                content = f"Error reading PDF: {str(pdf_e)}"
                         else:
-                            content = "PyPDF2 not installed. Cannot read PDF."
+                            content = "PyMuPDF not installed. Cannot read PDF."
                     elif lower_file.endswith((".xlsx", ".xls")):
                         df_dict = pd.read_excel(full_path, sheet_name=None)
                         for sheet_name, df in df_dict.items():
@@ -75,7 +77,7 @@ def read_project(project_path):
                             "content": content
                         })
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Error processing {file}: {str(e)}")
 
     return files_data
