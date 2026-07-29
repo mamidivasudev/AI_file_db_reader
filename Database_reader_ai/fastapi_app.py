@@ -105,6 +105,7 @@ class AskRequest(BaseModel):
 class AskFilesRequest(BaseModel):
     question: str
     model: Optional[str] = None
+    filename: Optional[str] = None
 
 class ConnectResponse(BaseModel):
     session_id: str
@@ -406,6 +407,14 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
                 status_code=404,
                 detail=f"No files found in {static_dir}"
             )
+            
+        if req.filename:
+            files_data = [f for f in files_data if req.filename.lower() in f["filename"].lower()]
+            if not files_data:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"File matching '{req.filename}' not found."
+                )
             
         # 2. Search files
         matched_files = search_files(req.question, files_data)
