@@ -419,18 +419,27 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         # 2. Search files
         matched_files = search_files(req.question, files_data)
         
+        # Fallback: If a specific filename was requested, use it even if keyword search matched 0 words (e.g. Hindi/Gujarati/Hinglish questions)
         if not matched_files:
-            return AskFilesResponse(
-                question=req.question,
-                answer="No relevant information found in the documents."
-            )
+            if req.filename and files_data:
+                matched_files = files_data
+            else:
+                return AskFilesResponse(
+                    question=req.question,
+                    answer="No relevant information found in the documents."
+                )
             
         # 3. Build prompt
-        prompt = ""
+        prompt = (
+            "You are an AI assistant answering questions based on provided document context.\n"
+            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+            "IMPORTANT: Respond in the SAME LANGUAGE as the user's question "
+            "(e.g., if asked in Hindi, Hinglish, or Gujarati, respond in Hindi, Hinglish, or Gujarati. If asked in English, respond in English).\n\n"
+        )
         for file in matched_files:
-            prompt += f"\n\nFILE: {file['filename']}\n"
-            prompt += file["content"][:80000]
-        prompt += f"\n\nQuestion:\n{req.question}"
+            prompt += f"FILE: {file['filename']}\n"
+            prompt += file["content"][:80000] + "\n\n"
+        prompt += f"Question:\n{req.question}"
         
         # 4. Ask Ollama
         if req.model:
