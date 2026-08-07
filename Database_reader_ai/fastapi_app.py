@@ -460,7 +460,7 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         logger.error("Error processing ask-files request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-@app.post("/upload_ask-query", response_model=AskFilesResponse)
+@app.post("/upload-file-ask-query", response_model=AskFilesResponse)
 async def upload_ask_query(
     question: str = Form(...),
     model: Optional[str] = Form(None),
