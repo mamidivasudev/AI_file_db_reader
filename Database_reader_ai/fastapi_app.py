@@ -20,9 +20,11 @@ Run:
 import os
 import logging
 from datetime import datetime, timezone
+import tempfile
+import shutil
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status, UploadFile, File, Form
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -456,4 +458,54 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         raise
     except Exception as exc:
         logger.error("Error processing ask-files request: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.post("/upload_ask-query", response_model=AskFilesResponse)
+async def upload_ask_query(
+    question: str = Form(...),
+    model: Optional[str] = Form(None),
+    file: UploadFile = File(...),
+    payload: dict = Depends(verify_token)
+):
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_file_path = os.path.join(temp_dir, file.filename)
+            with open(temp_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+                
+            files_data = read_project(temp_dir)
+            
+            if not files_data:
+                raise HTTPException(status_code=400, detail="Could not read the uploaded file.")
+                
+            matched_files = search_files(question, files_data)
+            
+            if not matched_files:
+                matched_files = files_data
+                
+            prompt = (
+                "You are an AI assistant answering questions based on provided document context.\n"
+                "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+                "IMPORTANT: Detect the language of the user's Question (e.g., English, Hindi, Marathi, Gujarati). "
+                "Your entire response MUST be in that exact same language. Do not mix languages or translate unless asked.\n\n"
+            )
+            for f in matched_files:
+                prompt += f"FILE: {f['filename']}\n"
+                prompt += f["content"][:80000] + "\n\n"
+            prompt += f"Question:\n{question}"
+            
+            if model:
+                answer = ask_ollama(prompt, model=model)
+            else:
+                answer = ask_ollama(prompt)
+                
+            return AskFilesResponse(question=question, answer=answer)
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error processing upload_ask_query request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
