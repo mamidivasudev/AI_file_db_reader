@@ -806,23 +806,42 @@ if mode == "File Reader AI Assistant":
             st.stop()
 
         matched_files = search_files(project_question, st.session_state["project_files"])
-        prompt = ""
+        prompt = (
+            "You are an AI assistant answering questions based on provided document context.\n"
+            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+            "IMPORTANT: Detect the language of the user's Question (e.g., English, Hindi, Marathi, Gujarati). "
+            "Your entire response MUST be in that exact same language. Do not mix languages or translate unless asked.\n"
+            "FORMAT REQUIREMENT: You MUST output your response in this exact format:\n"
+            "LANGUAGE: <language>\n"
+            "ANSWER: <your answer>\n\n"
+        )
         for file in matched_files:
-            prompt += f"\n\nFILE: {file['filename']}\n"
-            prompt += file["content"][:80000]
-        prompt += f"\n\nQuestion:\n{project_question}"
+            prompt += f"FILE: {file['filename']}\n"
+            prompt += file["content"][:80000] + "\n\n"
+        prompt += f"Question:\n{project_question}"
 
         with st.spinner("Analysing project…"):
-            answer = ask_ollama(prompt, model=selected_model)
+            raw_answer = ask_ollama(prompt, model=selected_model)
+
+        language = None
+        answer = raw_answer
+        
+        if "LANGUAGE:" in raw_answer and "ANSWER:" in raw_answer:
+            parts = raw_answer.split("ANSWER:", 1)
+            language = parts[0].replace("LANGUAGE:", "").strip()
+            answer = parts[1].strip()
 
         st.session_state["project_answer"] = answer
+        st.session_state["project_language"] = language
 
         with st.expander(f"📎 {len(matched_files)} matched files", expanded=False):
             for file in matched_files:
                 st.code(file["path"], language="")
 
-    if st.session_state["project_answer"]:
+    if st.session_state.get("project_answer"):
         st.markdown("**Answer**")
+        if st.session_state.get("project_language"):
+            st.caption(f"Detected Language: {st.session_state['project_language']}")
         st.info(st.session_state["project_answer"])
 
     st.stop()
