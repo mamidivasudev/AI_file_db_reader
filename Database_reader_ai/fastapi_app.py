@@ -25,6 +25,7 @@ import shutil
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -55,6 +56,14 @@ app = FastAPI(
     title="MSSQL AI Assistant API",
     version="1.0.0",
     docs_url="/docs",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://(.*\.)?satragroup\.in",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ─────────────────────────────────────────────
