@@ -30,10 +30,10 @@ def search_files(question, files_data):
             
             score += len(matches)
             
-            # Extract surrounding context for each match (up to first 10 matches)
-            for idx in matches[:10]:  
-                start = max(0, idx - 1500)
-                end = min(len(file["content"]), idx + 1500)
+            # Extract surrounding context for each match (up to first 5 matches to save context window)
+            for idx in matches[:5]:  
+                start = max(0, idx - 300)
+                end = min(len(file["content"]), idx + 300)
                 snippet_indices.append([start, end])
 
         if score > 0:
