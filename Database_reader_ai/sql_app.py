@@ -843,4 +843,4 @@ with tab_query:
                 "row_count": len(rows),
                 "summary": summary,
             })
-            st.rerun()
+            st.rerun()

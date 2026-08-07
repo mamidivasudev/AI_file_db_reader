@@ -521,3 +521,78 @@ async def upload_ask_query(
     except Exception as exc:
         logger.error("Error processing upload_ask_query request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/is-file-present")
+async def is_file_present():
+    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
+    if not os.path.exists(upload_dir):
+        return False
+    files = [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
+    return len(files) > 0
+
+@app.post("/upload-file")
+async def upload_file_endpoint(file: UploadFile = File(...)):
+    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    for f in os.listdir(upload_dir):
+        file_path = os.path.join(upload_dir, f)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+            
+    dest_path = os.path.join(upload_dir, file.filename)
+    with open(dest_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {"message": "File uploaded successfully", "filename": file.filename}
+
+@app.post("/ask-your-query", response_model=AskFilesResponse)
+async def ask_your_query(
+    question: str = Form(...),
+    model: Optional[str] = Form(None),
+    payload: dict = Depends(verify_token)
+):
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    try:
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
+        if not os.path.exists(upload_dir) or not [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]:
+            raise HTTPException(status_code=400, detail="No file found in uploaded_file folder.")
+            
+        files_data = read_project(upload_dir)
+        
+        if not files_data:
+            raise HTTPException(status_code=400, detail="Could not read the uploaded file.")
+            
+        matched_files = search_files(question, files_data)
+        
+        if not matched_files:
+            matched_files = files_data
+            
+        prompt = (
+            "You are an AI assistant answering questions based on provided document context.\n"
+            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n\n"
+        )
+        for f in matched_files:
+            prompt += f"FILE: {f['filename']}\n"
+            prompt += f["content"][:80000] + "\n\n"
+        prompt += f"Question:\n{question}"
+        
+        if model:
+            answer = ask_ollama(prompt, model=model)
+        else:
+            answer = ask_ollama(prompt)
+            
+        return AskFilesResponse(
+            question=question,
+            answer=answer
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error processing ask-your-query request: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
