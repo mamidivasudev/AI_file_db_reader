@@ -130,7 +130,6 @@ class AskResponse(BaseModel):
 
 class AskFilesResponse(BaseModel):
     question: str
-    language: Optional[str] = None
     answer: str
 
 
@@ -436,11 +435,8 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         prompt = (
             "You are an AI assistant answering questions based on provided document context.\n"
             "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
-            "IMPORTANT: Detect the language of the user's Question (e.g., English, Hindi, Marathi, Gujarati). "
-            "Your entire response MUST be in that exact same language. Do not mix languages or translate unless asked.\n"
-            "FORMAT REQUIREMENT: You MUST output your response in this exact format:\n"
-            "LANGUAGE: <language>\n"
-            "ANSWER: <your answer>\n\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n\n"
         )
         for file in matched_files:
             prompt += f"FILE: {file['filename']}\n"
@@ -449,21 +445,12 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
         
         # 4. Ask Ollama
         if req.model:
-            raw_answer = ask_ollama(prompt, model=req.model)
+            answer = ask_ollama(prompt, model=req.model)
         else:
-            raw_answer = ask_ollama(prompt)
-            
-        language = None
-        answer = raw_answer
-        
-        if "LANGUAGE:" in raw_answer and "ANSWER:" in raw_answer:
-            parts = raw_answer.split("ANSWER:", 1)
-            language = parts[0].replace("LANGUAGE:", "").strip()
-            answer = parts[1].strip()
+            answer = ask_ollama(prompt)
         
         return AskFilesResponse(
             question=req.question,
-            language=language,
             answer=answer
         )
         
@@ -502,11 +489,8 @@ async def upload_ask_query(
             prompt = (
                 "You are an AI assistant answering questions based on provided document context.\n"
                 "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
-                "IMPORTANT: Detect the language of the user's Question (e.g., English, Hindi, Marathi, Gujarati). "
-                "Your entire response MUST be in that exact same language. Do not mix languages or translate unless asked.\n"
-                "FORMAT REQUIREMENT: You MUST output your response in this exact format:\n"
-                "LANGUAGE: <language>\n"
-                "ANSWER: <your answer>\n\n"
+                "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+                "DO NOT announce or write the name of the language in your response.\n\n"
             )
             for f in matched_files:
                 prompt += f"FILE: {f['filename']}\n"
@@ -514,21 +498,12 @@ async def upload_ask_query(
             prompt += f"Question:\n{question}"
             
             if model:
-                raw_answer = ask_ollama(prompt, model=model)
+                answer = ask_ollama(prompt, model=model)
             else:
-                raw_answer = ask_ollama(prompt)
-                
-            language = None
-            answer = raw_answer
-            
-            if "LANGUAGE:" in raw_answer and "ANSWER:" in raw_answer:
-                parts = raw_answer.split("ANSWER:", 1)
-                language = parts[0].replace("LANGUAGE:", "").strip()
-                answer = parts[1].strip()
+                answer = ask_ollama(prompt)
                 
             return AskFilesResponse(
                 question=question,
-                language=language,
                 answer=answer
             )
             
