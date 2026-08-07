@@ -526,9 +526,11 @@ async def upload_ask_query(
 async def is_file_present():
     upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
     if not os.path.exists(upload_dir):
-        return False
+        return {"status": False, "file name": None}
     files = [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
-    return len(files) > 0
+    if len(files) > 0:
+        return {"status": True, "file name": files[0]}
+    return {"status": False, "file name": None}
 
 @app.post("/upload-file")
 async def upload_file_endpoint(file: UploadFile = File(...)):
