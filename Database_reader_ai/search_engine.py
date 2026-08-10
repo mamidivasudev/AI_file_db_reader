@@ -1,13 +1,39 @@
 import re
 
+STOP_WORDS = {
+    # English stop words
+    "what", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "doing",
+    "a", "an", "the", "and", "but", "if", "or", "because", "as",
+    "until", "while", "of", "at", "by", "for", "with", "about",
+    "against", "between", "into", "through", "during", "before", "after",
+    "above", "below", "to", "from", "up", "down", "in", "out", "on",
+    "off", "over", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "any", "both",
+    "each", "few", "more", "most", "other", "some", "such", "no",
+    "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "can", "will", "just", "should", "now", "tell", "me", "give", "show",
+    "find", "explain", "meaning", "define", "definition",
+    # Hindi/Hinglish stop words
+    "kya", "hai", "hain", "hoon", "tha", "the", "thi", "ka", "ke", "ki",
+    "ko", "se", "me", "mein", "par", "ne", "bhi", "toh", "ye", "yeh",
+    "woh", "jo", "aur", "ya", "parantu", "lekin", "kaise", "kab", "kahan",
+    "kyun", "kon", "kaun", "kiska", "kisne", "batao", "bataiye", "महे",
+    "क्या", "है", "हैं", "का", "के", "की", "को", "से", "में", "पर", "और",
+    "या", "बताएं", "बताओ", "यह", "वह", "कौन", "कैसे", "कहाँ"
+}
+
 def search_files(question, files_data):
     results = []
     
-    # Strip punctuation from question to get clean keywords
-    clean_question = re.sub(r'[^\w\s]', '', question.lower())
-    keywords = [w for w in clean_question.split() if len(w) > 3]
+    words = re.findall(r'\w+', question)
+    keywords = [w.lower() for w in words if w.lower() not in STOP_WORDS and len(w) >= 2]
+    
     if not keywords:
-        keywords = [w for w in clean_question.split() if len(w) > 2]
+        keywords = [w.lower() for w in words if len(w) >= 2]
+
+    if not keywords:
+        return files_data
 
     for file in files_data:
         score = 0
@@ -20,17 +46,15 @@ def search_files(question, files_data):
             if word in filename_lower:
                 score += 5
                 
-            # Find occurrences using simple find()
-            idx = content_lower.find(word)
-            matches = []
-            while idx != -1:
-                matches.append(idx)
-                # Find next occurrence
-                idx = content_lower.find(word, idx + 1)
+            # Find word boundary or exact matches
+            pattern = re.escape(word)
+            matches = [m.start() for m in re.finditer(pattern, content_lower)]
             
-            score += len(matches)
+            # Boost score for exact word matches (with word boundaries)
+            exact_matches = [m.start() for m in re.finditer(r'\b' + pattern + r'\b', content_lower)]
+            score += len(matches) + (len(exact_matches) * 2)
             
-            # Extract surrounding context for each match (up to first 5 matches to save context window)
+            # Extract surrounding context for up to 5 matches
             for idx in matches[:5]:  
                 start = max(0, idx - 300)
                 end = min(len(file["content"]), idx + 300)
@@ -60,4 +84,4 @@ def search_files(question, files_data):
             results.append((score, snippet_file))
 
     results.sort(key=lambda x: x[0], reverse=True)
-    return [item[1] for item in results[:15]]
+    return [item[1] for item in results[:15]]

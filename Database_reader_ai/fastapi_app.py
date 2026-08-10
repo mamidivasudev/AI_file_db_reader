@@ -39,7 +39,9 @@ from audit_logger import log_query   # see audit_logger.py
 from session_manager import (
     create_session,
     get_session,
-    remove_session
+    remove_session,
+    get_file_session_history,
+    add_file_session_history
 )
 from file_reader import read_project
 from search_engine import search_files
@@ -114,6 +116,7 @@ class AskRequest(BaseModel):
     model: Optional[str] = None
 
 class AskFilesRequest(BaseModel):
+    session_id: Optional[str] = None
     question: str
     model: Optional[str] = None
     filename: Optional[str] = None
@@ -138,6 +141,7 @@ class AskResponse(BaseModel):
     answer: str
 
 class AskFilesResponse(BaseModel):
+    session_id: Optional[str] = None
     question: str
     answer: str
 
@@ -552,12 +556,17 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
 async def ask_your_query(
     question: str = Form(...),
     model: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
     payload: dict = Depends(verify_token)
 ):
     if not question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
         
     try:
+        import uuid
+        if not session_id or not session_id.strip():
+            session_id = str(uuid.uuid4())
+
         upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
         if not os.path.exists(upload_dir) or not [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]:
             raise HTTPException(status_code=400, detail="No file found in uploaded_file folder.")
@@ -571,6 +580,8 @@ async def ask_your_query(
         
         if not matched_files:
             matched_files = files_data
+
+        history = get_file_session_history(session_id)
             
         prompt = (
             "You are an AI assistant answering questions based on provided document context.\n"
@@ -581,14 +592,23 @@ async def ask_your_query(
         for f in matched_files:
             prompt += f"FILE: {f['filename']}\n"
             prompt += f["content"][:80000] + "\n\n"
-        prompt += f"Question:\n{question}"
+
+        if history:
+            prompt += "Previous Conversation Context:\n"
+            for item in history:
+                prompt += f"User Question: {item['question']}\nAI Answer: {item['answer']}\n\n"
+
+        prompt += f"Current Question:\n{question}"
         
         if model:
             answer = ask_ollama(prompt, model=model)
         else:
             answer = ask_ollama(prompt)
+
+        add_file_session_history(session_id, question, answer)
             
         return AskFilesResponse(
+            session_id=session_id,
             question=question,
             answer=answer
         )
