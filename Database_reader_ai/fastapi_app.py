@@ -24,8 +24,10 @@ import tempfile
 import shutil
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status, UploadFile, File, Form
+from fastapi import Depends, FastAPI, HTTPException, status, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import json
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -34,7 +36,7 @@ from mssql_connector import connect_mssql
 from mssql_schema_reader import get_all_tables, get_selected_schema_text
 from mssql_sql_generator import generate_tsql, generate_answer_summary
 from mssql_executor import validate_tsql, execute_tsql
-from ollama_client import list_ollama_models, ask_ollama
+from ollama_client import list_ollama_models, ask_ollama, ask_ollama_stream
 from audit_logger import log_query   # see audit_logger.py
 from session_manager import (
     create_session,
@@ -617,4 +619,96 @@ async def ask_your_query(
         raise
     except Exception as exc:
         logger.error("Error processing ask-your-query request: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.post("/ask-your-query-stream")
+async def ask_your_query_stream_endpoint(
+    request: Request,
+    question: str = Form(...),
+    model: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    payload: dict = Depends(verify_token)
+):
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    try:
+        import uuid
+        if not session_id or not session_id.strip():
+            session_id = str(uuid.uuid4())
+
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
+        if not os.path.exists(upload_dir) or not [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]:
+            raise HTTPException(status_code=400, detail="No file found in uploaded_file folder.")
+            
+        files_data = read_project(upload_dir)
+        
+        if not files_data:
+            raise HTTPException(status_code=400, detail="Could not read the uploaded file.")
+            
+        matched_files = search_files(question, files_data)
+        
+        if not matched_files:
+            matched_files = files_data
+
+        history = get_file_session_history(session_id)
+            
+        prompt = (
+            "You are an AI assistant answering questions based on provided document context.\n"
+            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n\n"
+        )
+        for f in matched_files:
+            prompt += f"FILE: {f['filename']}\n"
+            prompt += f["content"][:80000] + "\n\n"
+
+        if history:
+            prompt += "Previous Conversation Context:\n"
+            for item in history:
+                prompt += f"User Question: {item['question']}\nAI Answer: {item['answer']}\n\n"
+
+        prompt += f"Current Question:\n{question}"
+        
+        async def event_generator():
+            try:
+                # 1. Yield session ID
+                yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
+                
+                full_answer = ""
+                # 2. Yield chunks
+                stream = ask_ollama_stream(prompt, model=model) if model else ask_ollama_stream(prompt)
+                async for chunk in stream:
+                    if await request.is_disconnected():
+                        logger.warning("Client disconnected during stream. Stopping generation.")
+                        break
+                    
+                    full_answer += chunk
+                    yield f"event: delta\ndata: {json.dumps({'text': chunk})}\n\n"
+                    
+                # 3. Add to history
+                if not await request.is_disconnected():
+                    add_file_session_history(session_id, question, full_answer)
+                    
+                    # 4. Yield done
+                    yield f"event: done\ndata: {json.dumps({'session_id': session_id})}\n\n"
+                    
+            except Exception as e:
+                logger.error("Error during streaming generation: %s", e)
+                yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error setting up ask-your-query-stream request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
