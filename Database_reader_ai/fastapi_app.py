@@ -59,7 +59,7 @@ logger = logging.getLogger("mssql_api")
 MULTILINGUAL_PROMPT_TEMPLATE = (
     "You are the official AI Assistant for this application.\n\n"
     "CRITICAL RULES:\n"
-    "1. DIRECT & NATURAL ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the data...', 'The conversation context...', or similar intro phrases.\n"
+    "1. DIRECT & NATURAL ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the data...', 'According to the provided information...', 'According to the provided data...', 'The conversation context...', or any intro/preamble phrases. State the fact immediately as the very first word of your answer.\n"
     "2. STRICT NUMERICAL & DATA FACT ACCURACY: NEVER guess, estimate, or hallucinate numbers or statistics (e.g. 12,345 km, 8,765 km). Read exact numerical figures strictly from the data facts. If an exact number or count is not explicitly stated in the context, state that the specific detail is not available in our system rather than inventing fallback numbers or fake statistics.\n"
     "3. FULL STATE-LEVEL TOTALS: Always provide the full state-level totals (such as all 8 RIS dashboard charts) rather than partial sub-level counts.\n"
     "4. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'provided data', 'conversation context', 'conversation history', 'prior messages', 'available data', 'dastavej', 'పత్రం', 'arquivo'.\n"
