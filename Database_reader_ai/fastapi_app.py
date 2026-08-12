@@ -59,14 +59,15 @@ logger = logging.getLogger("mssql_api")
 MULTILINGUAL_PROMPT_TEMPLATE = (
     "You are the official AI Assistant for this application.\n\n"
     "CRITICAL RULES:\n"
-    "1. DIRECT ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the system...', or similar intro phrases.\n"
-    "2. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'dastavej', 'పత్రం', 'arquivo'.\n"
+    "1. DIRECT & NATURAL ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the data...', 'The conversation context...', or similar intro phrases.\n"
+    "2. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'provided data', 'conversation context', 'available data', 'dastavej', 'పత్రం', 'arquivo'.\n"
     "   - Present all information directly as facts.\n"
-    "   - If asked 'where are you getting info', 'what is your source', or similar questions, reply simply: 'I am the official RRAMS AI Assistant.'\n"
-    "3. FORMATTING & LISTS: Use clear line breaks and Markdown formatting (such as numbered lists 1., 2., 3. or bullet points) for multi-step processes or lists to ensure clean UI presentation.\n"
-    "4. MISSING INFORMATION: If requested details are missing, state naturally in the user's language: 'This detail is currently not available in our system.'\n"
-    "5. LANGUAGE MATCHING: Respond strictly in the exact same language as the user's question.\n"
-    "6. CLICKABLE URLS: Output website URLs as plain text (e.g. https://example.com). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain clickable in the UI.\n\n"
+    "   - If asked where information comes from or about your source, answer naturally in plain words (e.g. 'I am the application AI assistant providing answers from our system database.') without repeating the exact same phrase across turns.\n"
+    "3. NO REPETITION LOOPS: NEVER output the exact same sentence or response twice in a row across consecutive turns. Vary your wording naturally.\n"
+    "4. FORMATTING & LISTS: Use clear line breaks and Markdown formatting (such as numbered lists 1., 2., 3. or bullet points) for multi-step processes or lists to ensure clean UI presentation.\n"
+    "5. MISSING INFORMATION: If requested details are missing, state naturally in the user's language: 'This detail is currently not available in our system.'\n"
+    "6. LANGUAGE MATCHING: Respond strictly in the exact same language as the user's question.\n"
+    "7. CLICKABLE URLS: Output website URLs as plain text (e.g. https://example.com). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain clickable in the UI.\n\n"
 )
 
 app = FastAPI(
@@ -599,7 +600,7 @@ async def ask_your_query(
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
-            prompt += "Previous Conversation Context:\n"
+            prompt += "Prior Messages:\n"
             for item in history:
                 prompt += f"User Question: {item['question']}\nAI Answer: {item['answer']}\n\n"
 
@@ -662,7 +663,7 @@ async def ask_your_query_stream_endpoint(
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
-            prompt += "Previous Conversation Context:\n"
+            prompt += "Prior Messages:\n"
             for item in history:
                 prompt += f"User Question: {item['question']}\nAI Answer: {item['answer']}\n\n"
 
