@@ -69,7 +69,7 @@ MULTILINGUAL_PROMPT_TEMPLATE = (
     "6. FORMATTING & LISTS: Use clear line breaks and Markdown formatting (such as numbered lists 1., 2., 3. or bullet points) for multi-step processes or lists to ensure clean UI presentation.\n"
     "7. MISSING INFORMATION: If requested details are missing, state naturally in the user's language: 'This detail is currently not available in our system.' Do not comment on conversation context or previous turns.\n"
     "8. LANGUAGE MATCHING: Respond strictly in the exact same language as the user's question.\n"
-    "9. CLICKABLE URLS: Output website URLs as plain text (e.g. https://example.com). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain clickable in the UI.\n\n"
+    "9. CLICKABLE URLS: Output website URLs as clickable Markdown hyperlinks [URL](URL) or plain text URLs (e.g. [https://ssotest.rajasthan.gov.in/signin](https://ssotest.rajasthan.gov.in/signin) or https://ssotest.rajasthan.gov.in/signin). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain active and clickable in the UI.\n\n"
 )
 
 app = FastAPI(
