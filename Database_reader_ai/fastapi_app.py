@@ -56,6 +56,19 @@ ALGORITHM = "HS256"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mssql_api")
 
+MULTILINGUAL_PROMPT_TEMPLATE = (
+    "You are the official AI Assistant for this application.\n\n"
+    "CRITICAL RULES:\n"
+    "1. DIRECT ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the system...', or similar intro phrases.\n"
+    "2. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'dastavej', 'పత్రం', 'arquivo'.\n"
+    "   - Present all information directly as facts.\n"
+    "   - If asked 'where are you getting info', 'what is your source', or similar questions, reply simply: 'I am the official RRAMS AI Assistant.'\n"
+    "3. FORMATTING & LISTS: Use clear line breaks and Markdown formatting (such as numbered lists 1., 2., 3. or bullet points) for multi-step processes or lists to ensure clean UI presentation.\n"
+    "4. MISSING INFORMATION: If requested details are missing, state naturally in the user's language: 'This detail is currently not available in our system.'\n"
+    "5. LANGUAGE MATCHING: Respond strictly in the exact same language as the user's question.\n"
+    "6. CLICKABLE URLS: Output website URLs as plain text (e.g. https://example.com). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain clickable in the UI.\n\n"
+)
+
 app = FastAPI(
     title="MSSQL AI Assistant API",
     version="1.0.0",
@@ -501,14 +514,9 @@ async def upload_ask_query(
             if not matched_files:
                 matched_files = files_data
                 
-            prompt = (
-                "You are an AI assistant answering questions based on provided document context.\n"
-                "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
-                "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-                "DO NOT announce or write the name of the language in your response.\n\n"
-            )
+            prompt = MULTILINGUAL_PROMPT_TEMPLATE
             for f in matched_files:
-                prompt += f"FILE: {f['filename']}\n"
+                prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
                 prompt += f["content"][:80000] + "\n\n"
             prompt += f"Question:\n{question}"
             
@@ -585,14 +593,9 @@ async def ask_your_query(
 
         history = get_file_session_history(session_id)
             
-        prompt = (
-            "You are an AI assistant answering questions based on provided document context.\n"
-            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
-            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-            "DO NOT announce or write the name of the language in your response.\n\n"
-        )
+        prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for f in matched_files:
-            prompt += f"FILE: {f['filename']}\n"
+            prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
@@ -653,14 +656,9 @@ async def ask_your_query_stream_endpoint(
 
         history = get_file_session_history(session_id)
             
-        prompt = (
-            "You are an AI assistant answering questions based on provided document context.\n"
-            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
-            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-            "DO NOT announce or write the name of the language in your response.\n\n"
-        )
+        prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for f in matched_files:
-            prompt += f"FILE: {f['filename']}\n"
+            prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
