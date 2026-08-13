@@ -592,9 +592,19 @@ async def ask_your_query(
             raise HTTPException(status_code=400, detail="Could not read the uploaded file.")
             
         matched_files = search_files(question, files_data)
-        
+
+        # ── Relevance Guard ──────────────────────────────────────────────
+        # If search_files returned nothing, it means NO relevant content
+        # was found in the document for this question.
+        # Do NOT fall back to full document — return "not available" directly
+        # without calling the LLM, to prevent hallucination.
         if not matched_files:
-            matched_files = files_data
+            import uuid
+            return AskFilesResponse(
+                session_id=session_id,
+                question=question,
+                answer="This detail is currently not available in our system."
+            )
 
         history = get_file_session_history(session_id)
             
@@ -655,9 +665,17 @@ async def ask_your_query_stream_endpoint(
             raise HTTPException(status_code=400, detail="Could not read the uploaded file.")
             
         matched_files = search_files(question, files_data)
-        
+
+        # ── Relevance Guard ──────────────────────────────────────────────
+        # If search_files returned nothing, it means NO relevant content
+        # was found in the document for this question.
+        # Do NOT fall back to full document — return "not available" directly
+        # without calling the LLM, to prevent hallucination.
         if not matched_files:
-            matched_files = files_data
+            async def not_available_generator():
+                yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
+                yield f"event: delta\ndata: {json.dumps({'delta': 'This detail is currently not available in our system.'})}\n\n"
+            return StreamingResponse(not_available_generator(), media_type="text/event-stream")
 
         history = get_file_session_history(session_id)
             
