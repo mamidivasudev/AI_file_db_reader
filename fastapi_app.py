@@ -609,7 +609,7 @@ async def ask_your_query(
 
         # 1. Identity & Source Protection for Old API
         question_lower = question.lower()
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
         if any(trigger in question_lower for trigger in identity_triggers):
             import uuid
             return AskFilesResponse(
@@ -697,7 +697,7 @@ async def ask_your_query_stream_endpoint(
 
         # 1. Identity & Source Protection for Old API Stream
         question_lower = question.lower()
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 import uuid
@@ -816,7 +816,7 @@ async def v2_ask_your_query(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
         if any(trigger in question_lower for trigger in identity_triggers):
             return AskFilesResponse(
                 session_id=session_id or str(uuid.uuid4()),
@@ -903,7 +903,7 @@ async def v2_ask_your_query_stream(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 session = session_id or str(uuid.uuid4())
