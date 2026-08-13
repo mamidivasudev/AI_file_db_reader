@@ -466,10 +466,11 @@ def ask_files(req: AskFilesRequest, payload: dict = Depends(verify_token)):
             
         # 3. Build prompt
         prompt = (
-            "You are an AI assistant answering questions based on provided document context.\n"
-            "INSTRUCTION: Answer the question accurately using ONLY the provided document content.\n"
+            "You are an AI assistant.\n"
+            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
             "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-            "DO NOT announce or write the name of the language in your response.\n\n"
+            "DO NOT announce or write the name of the language in your response.\n"
+            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
         )
         for file in matched_files:
             prompt += f"FILE: {file['filename']}\n"
@@ -606,9 +607,26 @@ async def ask_your_query(
                 answer="This detail is currently not available in our system."
             )
 
+        # 1. Identity & Source Protection for Old API
+        question_lower = question.lower()
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        if any(trigger in question_lower for trigger in identity_triggers):
+            import uuid
+            return AskFilesResponse(
+                session_id=session_id or str(uuid.uuid4()),
+                question=question,
+                answer="I am the official AI Assistant for the Rajasthan Public Works Department (PWD). All information I provide is sourced natively from our secure internal system database."
+            )
+
         history = get_file_session_history(session_id)
             
-        prompt = MULTILINGUAL_PROMPT_TEMPLATE
+        prompt = (
+            "You are an AI assistant.\n"
+            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n"
+            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
+        )
         for f in matched_files:
             prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
             prompt += f["content"][:80000] + "\n\n"
@@ -677,9 +695,27 @@ async def ask_your_query_stream_endpoint(
                 yield f"event: delta\ndata: {json.dumps({'delta': 'This detail is currently not available in our system.'})}\n\n"
             return StreamingResponse(not_available_generator(), media_type="text/event-stream")
 
+        # 1. Identity & Source Protection for Old API Stream
+        question_lower = question.lower()
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        if any(trigger in question_lower for trigger in identity_triggers):
+            async def identity_generator():
+                import uuid
+                session = session_id or str(uuid.uuid4())
+                yield f"event: session\ndata: {json.dumps({'session_id': session})}\n\n"
+                yield f"event: delta\ndata: {json.dumps({'text': 'I am the official AI Assistant for the Rajasthan Public Works Department (PWD). All information I provide is sourced natively from our secure internal system database.'})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'session_id': session})}\n\n"
+            return StreamingResponse(identity_generator(), media_type="text/event-stream")
+
         history = get_file_session_history(session_id)
             
-        prompt = MULTILINGUAL_PROMPT_TEMPLATE
+        prompt = (
+            "You are an AI assistant.\n"
+            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n"
+            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
+        )
         for f in matched_files:
             prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
             prompt += f["content"][:80000] + "\n\n"
@@ -733,3 +769,399 @@ async def ask_your_query_stream_endpoint(
     except Exception as exc:
         logger.error("Error setting up ask-your-query-stream request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ==============================================================================
+# V2 ADVANCED RAG ENDPOINTS (ChromaDB + Cross-Encoder)
+# These run side-by-side without disturbing V1 functionality
+# ==============================================================================
+
+@app.post("/v2/upload-file")
+async def v2_upload_file_endpoint(file: UploadFile = File(...)):
+    import v2_rag_engine
+    try:
+        os.makedirs(v2_rag_engine.V2_UPLOAD_DIR, exist_ok=True)
+        
+        # Save file to V2 directory
+        dest_path = os.path.join(v2_rag_engine.V2_UPLOAD_DIR, file.filename)
+        with open(dest_path, "wb") as buffer:
+            import shutil
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Ingest into ChromaDB
+        result = v2_rag_engine.ingest_file_v2(dest_path, file.filename)
+        
+        return {
+            "message": "File uploaded and vectorized successfully (V2)", 
+            "filename": file.filename,
+            "chunks_added": result.get("chunks_added", 0)
+        }
+    except Exception as e:
+        logger.error("V2 Upload Error: %s", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v2/ask-your-query")
+async def v2_ask_your_query(
+    question: str = Form(...),
+    model: Optional[str] = Form("llama3:latest"),
+    session_id: Optional[str] = Form(None)
+):
+    import v2_rag_engine
+    import uuid
+    import time
+    import httpx
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    try:
+        # 1. Identity & Source Protection (Intercept Conversational Questions)
+        question_lower = question.lower()
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        if any(trigger in question_lower for trigger in identity_triggers):
+            return AskFilesResponse(
+                session_id=session_id or str(uuid.uuid4()),
+                question=question,
+                answer="I am the official AI Assistant for the Rajasthan Public Works Department (PWD). All information I provide is sourced natively from our secure internal system database.",
+                time_taken=0.0
+            )
+
+        # 2. Advanced Retrieval + Reranking
+        relevant_chunks = v2_rag_engine.retrieve_and_rerank(question)
+        
+        # 3. Strict Threshold Guard
+        if not relevant_chunks:
+            return AskFilesResponse(
+                session_id=session_id or str(uuid.uuid4()),
+                question=question,
+                answer="This detail is currently not available in our system.",
+                time_taken=0.0
+            )
+            
+        # 3. Construct Grounded Prompt
+        context_text = "\n\n---\n\n".join(relevant_chunks)
+        system_prompt = f"""You are the official AI Assistant for the Rajasthan Public Works Department (PWD).
+
+=== SYSTEM DATA ===
+{context_text}
+=== END SYSTEM DATA ===
+
+You must answer the user's question using ONLY the SYSTEM DATA above.
+
+CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
+- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: "This detail is currently not available in our system."
+- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.
+- Never use introductory phrases like "According to the system data", "Based on the context", or "The document mentions". Start directly with the answer.
+- Do not explain your reasoning (except to show math). Just output the final answer."""
+
+        import time
+        start_time = time.time()
+        
+        # Call Ollama
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            "stream": False
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:11434/api/chat", json=payload, timeout=60.0)
+            response.raise_for_status()
+            response_data = response.json()
+            answer = response_data.get("message", {}).get("content", "")
+            
+        return AskFilesResponse(
+            session_id=session_id or str(uuid.uuid4()),
+            question=question,
+            answer=answer.strip(),
+            time_taken=round(time.time() - start_time, 2)
+        )
+        
+    except Exception as e:
+        logger.error("V2 Ask Query Error: %s", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v2/ask-your-query-stream")
+async def v2_ask_your_query_stream(
+    request: Request,
+    question: str = Form(...),
+    model: Optional[str] = Form("llama3:latest"),
+    session_id: Optional[str] = Form(None)
+):
+    import v2_rag_engine
+    import uuid
+    import time
+    import httpx
+    import json
+    from fastapi.responses import StreamingResponse
+    
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    try:
+        # 1. Identity & Source Protection (Intercept Conversational Questions)
+        question_lower = question.lower()
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+        if any(trigger in question_lower for trigger in identity_triggers):
+            async def identity_generator():
+                session = session_id or str(uuid.uuid4())
+                yield f"event: session\ndata: {json.dumps({'session_id': session})}\n\n"
+                yield f"event: delta\ndata: {json.dumps({'text': 'I am the official AI Assistant for the Rajasthan Public Works Department (PWD). All information I provide is sourced natively from our secure internal system database.'})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'session_id': session})}\n\n"
+            return StreamingResponse(identity_generator(), media_type="text/event-stream")
+
+        # 2. Advanced Retrieval + Reranking
+        relevant_chunks = v2_rag_engine.retrieve_and_rerank(question)
+        
+        # 3. Strict Threshold Guard
+        if not relevant_chunks:
+            async def not_available_generator():
+                session = session_id or str(uuid.uuid4())
+                yield f"event: session\ndata: {json.dumps({'session_id': session})}\n\n"
+                yield f"event: delta\ndata: {json.dumps({'text': 'This detail is currently not available in our system.'})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'session_id': session})}\n\n"
+            return StreamingResponse(not_available_generator(), media_type="text/event-stream")
+            
+        # 4. Build Optimized Prompt
+        prompt = MULTILINGUAL_PROMPT_TEMPLATE
+        for chunk in relevant_chunks:
+            prompt += f"SYSTEM DATA (Score: {chunk['score']}):\n{chunk['text']}\n\n"
+            
+        prompt += f"USER QUESTION: {question}\n"
+        prompt += "You must answer the user's question using ONLY the SYSTEM DATA above.\n\n"
+        prompt += "CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):\n"
+        prompt += "- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
+        prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.\n"
+        prompt += "- Never use introductory phrases like \"According to the system data\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
+        prompt += "- Do not explain your reasoning (except to show math). Just output the final answer."
+
+        # 5. Stream from Ollama via httpx
+        async def event_generator():
+            session = session_id or str(uuid.uuid4())
+            yield f"event: session\ndata: {json.dumps({'session_id': session})}\n\n"
+            
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": True
+            }
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    async with client.stream("POST", "http://localhost:11434/api/chat", json=payload, timeout=60.0) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if line:
+                                try:
+                                    data = json.loads(line)
+                                    chunk_text = data.get("message", {}).get("content", "")
+                                    if chunk_text:
+                                        yield f"event: delta\ndata: {json.dumps({'text': chunk_text})}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
+                yield f"event: done\ndata: {json.dumps({'session_id': session})}\n\n"
+            except Exception as e:
+                logger.error("V2 Stream Ollama Error: %s", str(e))
+                yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+                
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={
+                "X-Accel-Buffering": "no",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+        
+    except Exception as e:
+        logger.error("V2 Ask Query Stream Error: %s", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v2/current-file")
+async def get_current_file():
+    """Returns the list of files currently loaded in the V2 system."""
+    import v2_rag_engine
+    import os
+    if not os.path.exists(v2_rag_engine.V2_UPLOAD_DIR):
+        return {"status": False, "file name": None}
+    files = [f for f in os.listdir(v2_rag_engine.V2_UPLOAD_DIR) if os.path.isfile(os.path.join(v2_rag_engine.V2_UPLOAD_DIR, f))]
+    if len(files) > 0:
+        return {"status": True, "file name": files[0]}
+    return {"status": False, "file name": None}
+
+@app.get("/v2/chat")
+async def serve_v2_ui():
+    """Serves the Voice-Enabled UI for V2 RAG."""
+    from fastapi.responses import HTMLResponse
+    import os
+    ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "v2_ui.html")
+    if not os.path.exists(ui_path):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="UI file not found.")
+    with open(ui_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+# --- ADDED FOR ADMIN GLOBAL CONFIG API ---
+from history_manager import get_business_rules
+
+ADMIN_CONFIG_FILE = "admin_db_config.json"
+STATIC_MODEL_NAME = "llama3:latest"
+
+class AdminDbConfigRequest(BaseModel):
+    server: str
+    database: str
+    username: str
+    password: str
+    tables: list[str]
+    auth_mode: str = "SQL Server Authentication"
+    driver: str = ""
+
+class GlobalQuestionRequest(BaseModel):
+    question: str
+
+@app.post("/admin/save-db-config")
+def save_admin_db_config(req: AdminDbConfigRequest):
+    try:
+        conn = connect_mssql(
+            server=req.server,
+            database=req.database,
+            auth_mode=req.auth_mode,
+            username=req.username,
+            password=req.password,
+            driver=req.driver
+        )
+        conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to connect to database: {e}")
+
+    parsed_tables = []
+    for t in req.tables:
+        try:
+            parsed = _parse_table(t)
+            parsed_tables.append(list(parsed))
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid table format: {t}. Must be 'schema.table'")
+
+    config_data = {
+        "server": req.server,
+        "database": req.database,
+        "username": req.username,
+        "password": req.password,
+        "auth_mode": req.auth_mode,
+        "driver": req.driver,
+        "tables": parsed_tables
+    }
+
+    try:
+        with open(ADMIN_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=4)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save configuration: {e}")
+
+    return {"status": "success", "message": "Global configuration saved successfully."}
+
+@app.get("/admin/get-db-config")
+def get_admin_db_config():
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        return {"status": "not_configured", "config": None}
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            config["password"] = "********"
+            return {"status": "configured", "config": config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read configuration: {e}")
+
+@app.get("/admin/check-db-status")
+def check_db_status():
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        return {"is_configured": False, "is_connected": False, "message": "No database configuration found."}
+        
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            
+        conn = connect_mssql(
+            server=config["server"],
+            database=config["database"],
+            auth_mode=config.get("auth_mode", "SQL Server Authentication"),
+            username=config["username"],
+            password=config["password"],
+            driver=config.get("driver", "ODBC Driver 17 for SQL Server")
+        )
+        conn.close()
+        return {"is_configured": True, "is_connected": True, "message": "Database is configured and connection is successful."}
+        
+    except Exception as e:
+        return {"is_configured": True, "is_connected": False, "message": f"Connection failed: {str(e)}"}
+
+@app.post("/fetch-answer")
+def ask_global_db_query(request: GlobalQuestionRequest):
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        raise HTTPException(status_code=400, detail="Database is not configured. Admin must save config first.")
+        
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read admin config: {e}")
+        
+    conn = None
+    try:
+        logger.info(f"Connecting to {config['server']} - {config['database']}...")
+        conn = connect_mssql(
+            server=config["server"],
+            database=config["database"],
+            auth_mode=config.get("auth_mode", "SQL Server Authentication"),
+            username=config["username"],
+            password=config["password"],
+            driver=config.get("driver", "ODBC Driver 17 for SQL Server")
+        )
+        
+        logger.info("Extracting schema...")
+        tables_tuple = [tuple(t) for t in config["tables"]]
+        schema_text = get_selected_schema_text(conn, tables_tuple)
+        
+        db_identifier = f"MS SQL_{config['database']}"
+        business_rules = get_business_rules(db_identifier)
+        
+        logger.info("Generating SQL...")
+        sql_query = generate_tsql(question, schema_text, business_rules, model=STATIC_MODEL_NAME)
+        if not sql_query:
+             raise HTTPException(status_code=500, detail="Failed to generate SQL.")
+             
+        is_safe, reason = validate_tsql(sql_query)
+        if not is_safe:
+             raise HTTPException(status_code=400, detail=f"Unsafe query blocked: {reason}")
+             
+        logger.info(f"Executing SQL: {sql_query}")
+        try:
+            columns, rows = execute_tsql(conn, sql_query)
+        except Exception as e:
+             raise HTTPException(status_code=400, detail=f"SQL Execution Error: {e}")
+             
+        logger.info("Generating natural language answer...")
+        answer = generate_answer_summary(question, sql_query, columns, rows, model=STATIC_MODEL_NAME, simple_mode=True)
+        
+        return {
+            "question": question,
+            "answer": answer
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing global question: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+# -------------------------------
