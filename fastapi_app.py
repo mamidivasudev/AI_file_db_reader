@@ -610,7 +610,11 @@ async def ask_your_query(
 
         # 1. Identity & Source Protection for Old API
         question_lower = question.lower()
+<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+=======
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             import uuid
             return AskFilesResponse(
@@ -621,7 +625,13 @@ async def ask_your_query(
 
         history = get_file_session_history(session_id)
             
-        prompt = MULTILINGUAL_PROMPT_TEMPLATE
+        prompt = (
+            "You are an AI assistant.\n"
+            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n"
+            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
+        )
         for f in matched_files:
             prompt += f"FACTS:\n"
             prompt += f["content"][:80000] + "\n\n"
@@ -692,7 +702,11 @@ async def ask_your_query_stream_endpoint(
 
         # 1. Identity & Source Protection for Old API Stream
         question_lower = question.lower()
+<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+=======
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 import uuid
@@ -704,7 +718,13 @@ async def ask_your_query_stream_endpoint(
 
         history = get_file_session_history(session_id)
             
-        prompt = MULTILINGUAL_PROMPT_TEMPLATE
+        prompt = (
+            "You are an AI assistant.\n"
+            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
+            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
+            "DO NOT announce or write the name of the language in your response.\n"
+            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
+        )
         for f in matched_files:
             prompt += f"FACTS:\n"
             prompt += f["content"][:80000] + "\n\n"
@@ -765,7 +785,11 @@ async def ask_your_query_stream_endpoint(
 # These run side-by-side without disturbing V1 functionality
 # ==============================================================================
 
+<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/upload-file")
+=======
+@app.post("/v2/upload-file")
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_upload_file_endpoint(file: UploadFile = File(...)):
     import v2_rag_engine
     try:
@@ -789,7 +813,11 @@ async def v2_upload_file_endpoint(file: UploadFile = File(...)):
         logger.error("V2 Upload Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/ask-your-query")
+=======
+@app.post("/v2/ask-your-query")
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_ask_your_query(
     question: str = Form(...),
     model: Optional[str] = Form("llama3:latest"),
@@ -805,7 +833,11 @@ async def v2_ask_your_query(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
+<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+=======
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             return AskFilesResponse(
                 session_id=session_id or str(uuid.uuid4()),
@@ -830,6 +862,7 @@ async def v2_ask_your_query(
         context_text = "\n\n---\n\n".join(relevant_chunks)
         system_prompt = f"""You are the official AI Assistant for the Rajasthan Public Works Department (PWD).
 
+<<<<<<< Updated upstream:fastapi_app.py
 === FACTS ===
 {context_text}
 === END FACTS ===
@@ -840,6 +873,18 @@ CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
 - If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: "This detail is currently not available in our system."
 - You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.
 - Never use introductory phrases like "According to the FACTS", "Based on the context", or "The document mentions". Start directly with the answer.
+=======
+=== SYSTEM DATA ===
+{context_text}
+=== END SYSTEM DATA ===
+
+You must answer the user's question using ONLY the SYSTEM DATA above.
+
+CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
+- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: "This detail is currently not available in our system."
+- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.
+- Never use introductory phrases like "According to the system data", "Based on the context", or "The document mentions". Start directly with the answer.
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 - Do not explain your reasoning (except to show math). Just output the final answer."""
 
         import time
@@ -872,7 +917,11 @@ CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
         logger.error("V2 Ask Query Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/ask-your-query-stream")
+=======
+@app.post("/v2/ask-your-query-stream")
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_ask_your_query_stream(
     request: Request,
     question: str = Form(...),
@@ -892,7 +941,11 @@ async def v2_ask_your_query_stream(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
+<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+=======
+        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 session = session_id or str(uuid.uuid4())
@@ -916,6 +969,7 @@ async def v2_ask_your_query_stream(
         # 4. Build Optimized Prompt
         prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for chunk in relevant_chunks:
+<<<<<<< Updated upstream:fastapi_app.py
             prompt += f"FACTS (Score: {chunk['score']}):\n{chunk['text']}\n\n"
             
         prompt += f"USER QUESTION: {question}\n"
@@ -924,6 +978,16 @@ async def v2_ask_your_query_stream(
         prompt += "- If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
         prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.\n"
         prompt += "- Never use introductory phrases like \"According to the FACTS\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
+=======
+            prompt += f"SYSTEM DATA (Score: {chunk['score']}):\n{chunk['text']}\n\n"
+            
+        prompt += f"USER QUESTION: {question}\n"
+        prompt += "You must answer the user's question using ONLY the SYSTEM DATA above.\n\n"
+        prompt += "CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):\n"
+        prompt += "- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
+        prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.\n"
+        prompt += "- Never use introductory phrases like \"According to the system data\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
+>>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         prompt += "- Do not explain your reasoning (except to show math). Just output the final answer."
 
         # 5. Stream from Ollama via httpx
@@ -992,3 +1056,165 @@ async def serve_v2_ui():
         raise HTTPException(status_code=404, detail="UI file not found.")
     with open(ui_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+
+# --- ADDED FOR ADMIN GLOBAL CONFIG API ---
+from history_manager import get_business_rules
+
+ADMIN_CONFIG_FILE = "admin_db_config.json"
+STATIC_MODEL_NAME = "llama3:latest"
+
+class AdminDbConfigRequest(BaseModel):
+    server: str
+    database: str
+    username: str
+    password: str
+    tables: list[str]
+    auth_mode: str = "SQL Server Authentication"
+    driver: str = ""
+
+class GlobalQuestionRequest(BaseModel):
+    question: str
+
+@app.post("/admin/save-db-config")
+def save_admin_db_config(req: AdminDbConfigRequest):
+    try:
+        conn = connect_mssql(
+            server=req.server,
+            database=req.database,
+            auth_mode=req.auth_mode,
+            username=req.username,
+            password=req.password,
+            driver=req.driver
+        )
+        conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to connect to database: {e}")
+
+    parsed_tables = []
+    for t in req.tables:
+        try:
+            parsed = _parse_table(t)
+            parsed_tables.append(list(parsed))
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid table format: {t}. Must be 'schema.table'")
+
+    config_data = {
+        "server": req.server,
+        "database": req.database,
+        "username": req.username,
+        "password": req.password,
+        "auth_mode": req.auth_mode,
+        "driver": req.driver,
+        "tables": parsed_tables
+    }
+
+    try:
+        with open(ADMIN_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=4)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save configuration: {e}")
+
+    return {"status": "success", "message": "Global configuration saved successfully."}
+
+@app.get("/admin/get-db-config")
+def get_admin_db_config():
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        return {"status": "not_configured", "config": None}
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            config["password"] = "********"
+            return {"status": "configured", "config": config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read configuration: {e}")
+
+@app.get("/admin/check-db-status")
+def check_db_status():
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        return {"is_configured": False, "is_connected": False, "message": "No database configuration found."}
+        
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            
+        conn = connect_mssql(
+            server=config["server"],
+            database=config["database"],
+            auth_mode=config.get("auth_mode", "SQL Server Authentication"),
+            username=config["username"],
+            password=config["password"],
+            driver=config.get("driver", "ODBC Driver 17 for SQL Server")
+        )
+        conn.close()
+        return {"is_configured": True, "is_connected": True, "message": "Database is configured and connection is successful."}
+        
+    except Exception as e:
+        return {"is_configured": True, "is_connected": False, "message": f"Connection failed: {str(e)}"}
+
+@app.post("/fetch-answer")
+def ask_global_db_query(request: GlobalQuestionRequest):
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+        
+    if not os.path.exists(ADMIN_CONFIG_FILE):
+        raise HTTPException(status_code=400, detail="Database is not configured. Admin must save config first.")
+        
+    try:
+        with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read admin config: {e}")
+        
+    conn = None
+    try:
+        logger.info(f"Connecting to {config['server']} - {config['database']}...")
+        conn = connect_mssql(
+            server=config["server"],
+            database=config["database"],
+            auth_mode=config.get("auth_mode", "SQL Server Authentication"),
+            username=config["username"],
+            password=config["password"],
+            driver=config.get("driver", "ODBC Driver 17 for SQL Server")
+        )
+        
+        logger.info("Extracting schema...")
+        tables_tuple = [tuple(t) for t in config["tables"]]
+        schema_text = get_selected_schema_text(conn, tables_tuple)
+        
+        db_identifier = f"MS SQL_{config['database']}"
+        business_rules = get_business_rules(db_identifier)
+        
+        logger.info("Generating SQL...")
+        sql_query = generate_tsql(question, schema_text, business_rules, model=STATIC_MODEL_NAME)
+        if not sql_query:
+             raise HTTPException(status_code=500, detail="Failed to generate SQL.")
+             
+        is_safe, reason = validate_tsql(sql_query)
+        if not is_safe:
+             raise HTTPException(status_code=400, detail=f"Unsafe query blocked: {reason}")
+             
+        logger.info(f"Executing SQL: {sql_query}")
+        try:
+            columns, rows = execute_tsql(conn, sql_query)
+        except Exception as e:
+             raise HTTPException(status_code=400, detail=f"SQL Execution Error: {e}")
+             
+        logger.info("Generating natural language answer...")
+        answer = generate_answer_summary(question, sql_query, columns, rows, model=STATIC_MODEL_NAME, simple_mode=True)
+        
+        return {
+            "question": question,
+            "answer": answer
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing global question: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+# -------------------------------

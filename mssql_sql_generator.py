@@ -42,7 +42,7 @@ Question:
     return sql
 
 
-def generate_answer_summary(question, sql, columns, rows, model=None):
+def generate_answer_summary(question, sql, columns, rows, model=None, simple_mode=False):
     """Ask Ollama to summarise query results in plain English."""
     if not rows:
         return "No records were returned for your question."
@@ -67,7 +67,11 @@ The SQL query returned these results:
 
 {table_text}
 
-Write a clear, concise natural-language answer (2–4 sentences) that directly answers the question based on the data above. Do not repeat the SQL. Do not use bullet points."""
+"""
+    if simple_mode:
+        prompt += "Write a very concise, direct answer based on the data above. NEVER start with phrases like 'According to the data' or 'Based on the provided data'. Just state the facts immediately. Do not repeat the SQL."
+    else:
+        prompt += "Write a clear, concise natural-language answer (2–4 sentences) that directly answers the question based on the data above. Do not repeat the SQL. Do not use bullet points."
 
     kwargs = {"model": model} if model else {}
     return ask_ollama(prompt, **kwargs)
