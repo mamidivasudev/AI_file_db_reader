@@ -18,6 +18,11 @@ RELEVANCE_THRESHOLD = -5.0  # ms-marco scores are usually logits, > 0 is very go
 _chroma_client = None
 _cross_encoder = None
 
+from chromadb.utils import embedding_functions
+
+# Multilingual Embedding Function for ChromaDB
+multilingual_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="paraphrase-multilingual-MiniLM-L12-v2")
+
 def get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
@@ -28,8 +33,8 @@ def get_chroma_client():
 def get_cross_encoder():
     global _cross_encoder
     if _cross_encoder is None:
-        # Downloads model on first run (~90MB)
-        _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
+        # Cross-Encoder (Multilingual)
+        _cross_encoder = CrossEncoder('cross-encoder/mmarco-mMiniLMv2-L12-H384-v1', max_length=512)
     return _cross_encoder
 
 def extract_text_from_docx(file_path):
@@ -81,7 +86,10 @@ def ingest_file_v2(file_path, filename):
     chunks = create_overlapping_chunks(text, CHUNK_SIZE, CHUNK_OVERLAP)
     
     client = get_chroma_client()
-    collection = client.get_or_create_collection(name="rrams_v2_collection")
+    collection = client.get_or_create_collection(
+        name="rrams_multilingual_v1",
+        embedding_function=multilingual_ef
+    )
     
     # Optional: Clear old data for this filename to prevent duplicates on re-upload
     try:
@@ -104,7 +112,10 @@ def ingest_file_v2(file_path, filename):
 def retrieve_and_rerank(query):
     """Retrieves top K chunks, reranks them, and applies threshold."""
     client = get_chroma_client()
-    collection = client.get_or_create_collection(name="rrams_v2_collection")
+    collection = client.get_or_create_collection(
+        name="rrams_multilingual_v1",
+        embedding_function=multilingual_ef
+    )
     
     if collection.count() == 0:
         return []
