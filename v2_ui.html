@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V2 AI Assistant</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --user-msg: rgba(59, 130, 246, 0.2);
+            --ai-msg: rgba(30, 41, 59, 0.5);
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
+            color: var(--text-primary);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: 90vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 20px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-control {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-control:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-clear:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .chat-box {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 14px 18px;
+            border-radius: 16px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+            white-space: pre-wrap;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background: var(--user-msg);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-message {
+            align-self: flex-start;
+            background: var(--ai-msg);
+            border: 1px solid var(--glass-border);
+            border-bottom-left-radius: 4px;
+        }
+
+        .input-area {
+            padding: 20px;
+            background: rgba(15, 23, 42, 0.8);
+            border-top: 1px solid var(--glass-border);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 14px 20px;
+            border-radius: 30px;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-send {
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s;
+            font-size: 1.2rem;
+        }
+
+        .btn-send:hover {
+            background: var(--accent-hover);
+            transform: scale(1.05);
+        }
+
+        .loading {
+            align-self: flex-start;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            display: none;
+            padding: 10px 20px;
+        }
+
+        .dots::after {
+            content: '';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <div class="header">
+            <div>
+                <h1>V2 AI Assistant</h1>
+                <div id="fileInfo" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Loading file info...</div>
+            </div>
+            <div class="header-controls">
+                <button class="btn-control" id="copyBtn" title="Copy entire chat to clipboard">
+                    <span>📋</span> Copy Chat
+                </button>
+                <button class="btn-control btn-clear" id="clearBtn" title="Clear all messages">
+                    <span>🗑️</span> Clear
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-box" id="chatBox">
+            <div class="message ai-message" id="welcomeMsg">
+                Hello! I am ready to answer questions about the document.
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">AI is thinking<span class="dots"></span></div>
+
+        <div class="input-area">
+            <input type="text" id="questionInput" placeholder="Ask a question..." autocomplete="off">
+            <button class="btn-send" id="sendBtn" title="Send">➤</button>
+        </div>
+    </div>
+
+    <script>
+        // Use relative URL so it works seamlessly on server without hardcoding IP
+        const API_URL = "/v2/ask-your-query";
+        const FILE_INFO_URL = "/v2/current-file";
+        
+        const chatBox = document.getElementById('chatBox');
+        const questionInput = document.getElementById('questionInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const fileInfo = document.getElementById('fileInfo');
+
+        // Fetch Current File Info
+        async function fetchFileInfo() {
+            try {
+                const res = await fetch(FILE_INFO_URL);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.status && data["file name"]) {
+                        fileInfo.textContent = "📄 Loaded: " + data["file name"];
+                    } else {
+                        fileInfo.textContent = "⚠️ No document loaded";
+                    }
+                } else {
+                    fileInfo.textContent = "Document info unavailable";
+                }
+            } catch (e) {
+                fileInfo.textContent = "";
+            }
+        }
+        
+        // Fetch on load
+        fetchFileInfo();
+
+        function appendMessage(sender, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}-message`;
+            msgDiv.textContent = text;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Clear Chat
+        clearBtn.addEventListener('click', () => {
+            if(confirm("Are you sure you want to clear the chat?")) {
+                chatBox.innerHTML = `
+                    <div class="message ai-message" id="welcomeMsg">
+                        Hello! I am ready to answer questions about the document.
+                    </div>
+                `;
+            }
+        });
+
+        function fallbackCopyTextToClipboard(text, successCallback) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    successCallback();
+                } else {
+                    alert("Failed to copy to clipboard. Your browser is blocking it over non-HTTPS.");
+                }
+            } catch (err) {
+                alert("Failed to copy to clipboard.");
+            }
+            document.body.removeChild(textArea);
+        }
+
+        // Copy Chat to Clipboard
+        copyBtn.addEventListener('click', async () => {
+            const messages = document.querySelectorAll('.message');
+            let chatText = "--- Chat Export ---\n\n";
+            
+            messages.forEach(msg => {
+                if (msg.id === 'welcomeMsg') return;
+                const isUser = msg.classList.contains('user-message');
+                chatText += isUser ? "User: " : "AI: ";
+                chatText += msg.textContent.trim() + "\n\n";
+            });
+
+            if (chatText.trim() === "--- Chat Export ---") {
+                alert("The chat is empty!");
+                return;
+            }
+
+            const successCallback = () => {
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = "<span>✅</span> Copied!";
+                copyBtn.style.background = "var(--success)";
+                copyBtn.style.borderColor = "var(--success)";
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                    copyBtn.style.background = "";
+                    copyBtn.style.borderColor = "";
+                }, 2000);
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(chatText);
+                    successCallback();
+                } catch (err) {
+                    fallbackCopyTextToClipboard(chatText, successCallback);
+                }
+            } else {
+                fallbackCopyTextToClipboard(chatText, successCallback);
+            }
+        });
+
+        async function sendMessage() {
+            const question = questionInput.value.trim();
+            if (!question) return;
+
+            // Clear input and show user message
+            questionInput.value = '';
+            appendMessage('user', question);
+            
+            // Show loading
+            loadingIndicator.style.display = 'block';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const formData = new URLSearchParams();
+                formData.append('question', question);
+                formData.append('model', 'llama3:latest');
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                loadingIndicator.style.display = 'none';
+                
+                appendMessage('ai', data.answer);
+                
+            } catch (error) {
+                console.error("Error:", error);
+                loadingIndicator.style.display = 'none';
+                appendMessage('ai', "Sorry, there was an error connecting to the server.");
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        questionInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
