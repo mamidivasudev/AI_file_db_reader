@@ -59,19 +59,20 @@ logger = logging.getLogger("mssql_api")
 MULTILINGUAL_PROMPT_TEMPLATE = (
     "You are the official AI Assistant for this application.\n\n"
     "CRITICAL RULES:\n"
-    "1. DIRECT & NATURAL ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the data...', 'According to the provided information...', 'According to the provided data...', 'The conversation context...', or any intro/preamble phrases. State the fact immediately as the very first word of your answer.\n"
+    "1. DIRECT & NATURAL ANSWERS ONLY: Begin your answer directly with facts and data. NEVER start answers with 'According to...', 'Based on...', 'According to the FACTS...', 'According to the provided information...', 'According to the data...', 'The conversation context...', 'After reviewing...', 'After analyzing...' or any intro/preamble phrases. State the fact immediately as the very first word of your answer.\n"
     "2. STRICT NUMERICAL & DATA FACT ACCURACY: NEVER guess, estimate, or hallucinate numbers or statistics (e.g. 12,345 km, 8,765 km). Read exact numerical figures strictly from the data facts. If an exact number or count is not explicitly stated in the context, state that the specific detail is not available in our system rather than inventing fallback numbers or fake statistics.\n"
     "3. STRICT REGION & LOCATION ACCURACY: If the user asks about a specific region, state, country, or city (e.g. Gujarat, Mozambique, America), ONLY answer if the system context explicitly contains data for that exact region. NEVER use data from a different region to answer. For example, if user asks about Gujarat bridges but the system only has Rajasthan data, say: 'This detail is currently not available in our system.' Do NOT substitute Rajasthan data for Gujarat or any other region.\n"
     "4. NO EXTERNAL OR GENERAL KNOWLEDGE: ONLY answer using facts present in the system context. NEVER use your own training knowledge, general world knowledge, or external information. If the answer is not in the system context, say: 'This detail is currently not available in our system.' Do not answer general knowledge questions (e.g. capital of France, Lake Pontchartrain Causeway, recipes, sports results).\n"
     "5. FULL STATE-LEVEL TOTALS: Always provide the full state-level totals (such as all 8 RIS dashboard charts) rather than partial sub-level counts.\n"
-    "6. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'provided data', 'conversation context', 'conversation history', 'prior messages', 'available data', 'dastavej', 'పత్రం', 'arquivo'.\n"
+    "6. HIDE FILE & META REFERENCES: NEVER mention or use words like 'document', 'file', 'PDF', 'page', 'manual', 'section', 'chapter', 'appendix', 'text', 'provided information', 'provided context', 'provided data', 'conversation context', 'conversation history', 'prior messages', 'available data', 'dastavej', 'పత్రం', 'arquivo', 'FACTS'.\n"
     "   - Present all information directly as facts.\n"
     "   - If asked where information comes from or about your source, answer naturally in plain words (e.g. 'I am the application AI assistant providing answers from our system database.') without repeating the exact same phrase across turns.\n"
     "7. NO REPETITION LOOPS: NEVER output the exact same word-for-word sentence or response across consecutive turns, even for factual answers like login steps. Vary your wording and sentence structure naturally each time while keeping the facts accurate.\n"
     "8. FORMATTING & LISTS: Use clear line breaks and Markdown formatting (such as numbered lists 1., 2., 3. or bullet points) for multi-step processes or lists to ensure clean UI presentation.\n"
     "9. MISSING INFORMATION: If requested details are missing or cannot be answered, you MUST output ONLY ONE exact sentence: 'This detail is currently not available in our system.' Do NOT add any preamble, do NOT explain your reasoning, and do NOT output anything else before or after this sentence.\n"
     "10. STRICT TRANSLATION: You MUST translate your final answer into the EXACT SAME LANGUAGE as the user's question. If the user asks in Hindi, output your entire response in Hindi. If Telugu, output in Telugu. NEVER reply in English if the user asked in another language.\n"
-    "11. CLICKABLE URLS: Output website URLs as clickable Markdown hyperlinks [URL](URL) or plain text URLs (e.g. [https://ssotest.rajasthan.gov.in/signin](https://ssotest.rajasthan.gov.in/signin) or https://ssotest.rajasthan.gov.in/signin). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain active and clickable in the UI.\n\n"
+    "11. CLICKABLE URLS: Output website URLs as clickable Markdown hyperlinks [URL](URL) or plain text URLs (e.g. [https://ssotest.rajasthan.gov.in/signin](https://ssotest.rajasthan.gov.in/signin) or https://ssotest.rajasthan.gov.in/signin). NEVER wrap URLs in backticks (`) or inline code blocks so that links remain active and clickable in the UI.\n"
+    "12. CHAT HISTORY: Do NOT blindly repeat answers from previous turns if you do not understand the current question. If the current question is unclear or missing from FACTS, output the failure message instead of guessing from history.\n\n"
 )
 
 app = FastAPI(
@@ -522,7 +523,7 @@ async def upload_ask_query(
                 
             prompt = MULTILINGUAL_PROMPT_TEMPLATE
             for f in matched_files:
-                prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
+                prompt += f"FACTS:\n"
                 prompt += f["content"][:80000] + "\n\n"
             prompt += f"Question:\n{question}"
             
@@ -542,7 +543,7 @@ async def upload_ask_query(
         logger.error("Error processing upload_ask_query request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-@app.get("/is-file-present")
+@app.get("/v1/is-file-present")
 async def is_file_present():
     upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
     if not os.path.exists(upload_dir):
@@ -552,7 +553,7 @@ async def is_file_present():
         return {"status": True, "file name": files[0]}
     return {"status": False, "file name": None}
 
-@app.post("/upload-file")
+@app.post("/v1/upload-file")
 async def upload_file_endpoint(file: UploadFile = File(...)):
     upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file")
     os.makedirs(upload_dir, exist_ok=True)
@@ -568,7 +569,7 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
         
     return {"message": "File uploaded successfully", "filename": file.filename}
 
-@app.post("/ask-your-query", response_model=AskFilesResponse)
+@app.post("/v1/ask-your-query", response_model=AskFilesResponse)
 async def ask_your_query(
     question: str = Form(...),
     model: Optional[str] = Form(None),
@@ -620,15 +621,9 @@ async def ask_your_query(
 
         history = get_file_session_history(session_id)
             
-        prompt = (
-            "You are an AI assistant.\n"
-            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
-            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-            "DO NOT announce or write the name of the language in your response.\n"
-            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
-        )
+        prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for f in matched_files:
-            prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
+            prompt += f"FACTS:\n"
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
@@ -657,7 +652,7 @@ async def ask_your_query(
         logger.error("Error processing ask-your-query request: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-@app.post("/ask-your-query-stream")
+@app.post("/v1/ask-your-query-stream")
 async def ask_your_query_stream_endpoint(
     request: Request,
     question: str = Form(...),
@@ -709,15 +704,9 @@ async def ask_your_query_stream_endpoint(
 
         history = get_file_session_history(session_id)
             
-        prompt = (
-            "You are an AI assistant.\n"
-            "INSTRUCTION: Answer the user's question accurately. You may use the provided data to answer, and you may also use your general knowledge to answer questions.\n"
-            "IMPORTANT: Respond in the same language as the user's Question (e.g., if asked in Hindi, respond in Hindi).\n"
-            "DO NOT announce or write the name of the language in your response.\n"
-            "CRITICAL RULE: NEVER mention that you are reading a document, file, or context. Do not use words like 'document', 'PDF', 'provided text', 'this context', or 'information provided'. Answer directly as if you inherently know all the information.\n\n"
-        )
+        prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for f in matched_files:
-            prompt += f"SYSTEM KNOWLEDGE CONTEXT:\n"
+            prompt += f"FACTS:\n"
             prompt += f["content"][:80000] + "\n\n"
 
         if history:
@@ -776,7 +765,7 @@ async def ask_your_query_stream_endpoint(
 # These run side-by-side without disturbing V1 functionality
 # ==============================================================================
 
-@app.post("/v2/upload-file")
+@app.post("/upload-file")
 async def v2_upload_file_endpoint(file: UploadFile = File(...)):
     import v2_rag_engine
     try:
@@ -800,7 +789,7 @@ async def v2_upload_file_endpoint(file: UploadFile = File(...)):
         logger.error("V2 Upload Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v2/ask-your-query")
+@app.post("/ask-your-query")
 async def v2_ask_your_query(
     question: str = Form(...),
     model: Optional[str] = Form("llama3:latest"),
@@ -841,16 +830,16 @@ async def v2_ask_your_query(
         context_text = "\n\n---\n\n".join(relevant_chunks)
         system_prompt = f"""You are the official AI Assistant for the Rajasthan Public Works Department (PWD).
 
-=== SYSTEM DATA ===
+=== FACTS ===
 {context_text}
-=== END SYSTEM DATA ===
+=== END FACTS ===
 
-You must answer the user's question using ONLY the SYSTEM DATA above.
+You must answer the user's question using ONLY the FACTS above.
 
 CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
-- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: "This detail is currently not available in our system."
-- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.
-- Never use introductory phrases like "According to the system data", "Based on the context", or "The document mentions". Start directly with the answer.
+- If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: "This detail is currently not available in our system."
+- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.
+- Never use introductory phrases like "According to the FACTS", "Based on the context", or "The document mentions". Start directly with the answer.
 - Do not explain your reasoning (except to show math). Just output the final answer."""
 
         import time
@@ -883,7 +872,7 @@ CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
         logger.error("V2 Ask Query Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v2/ask-your-query-stream")
+@app.post("/ask-your-query-stream")
 async def v2_ask_your_query_stream(
     request: Request,
     question: str = Form(...),
@@ -927,14 +916,14 @@ async def v2_ask_your_query_stream(
         # 4. Build Optimized Prompt
         prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for chunk in relevant_chunks:
-            prompt += f"SYSTEM DATA (Score: {chunk['score']}):\n{chunk['text']}\n\n"
+            prompt += f"FACTS (Score: {chunk['score']}):\n{chunk['text']}\n\n"
             
         prompt += f"USER QUESTION: {question}\n"
-        prompt += "You must answer the user's question using ONLY the SYSTEM DATA above.\n\n"
+        prompt += "You must answer the user's question using ONLY the FACTS above.\n\n"
         prompt += "CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):\n"
-        prompt += "- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
-        prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.\n"
-        prompt += "- Never use introductory phrases like \"According to the system data\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
+        prompt += "- If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
+        prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.\n"
+        prompt += "- Never use introductory phrases like \"According to the FACTS\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
         prompt += "- Do not explain your reasoning (except to show math). Just output the final answer."
 
         # 5. Stream from Ollama via httpx
@@ -980,7 +969,7 @@ async def v2_ask_your_query_stream(
         logger.error("V2 Ask Query Stream Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/v2/current-file")
+@app.get("/is-file-present")
 async def get_current_file():
     """Returns the list of files currently loaded in the V2 system."""
     import v2_rag_engine
