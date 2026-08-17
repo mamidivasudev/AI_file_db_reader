@@ -3,6 +3,8 @@ import uuid
 import docx
 import chromadb
 from sentence_transformers import CrossEncoder
+import httpx
+
 
 # Configuration
 V2_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploaded_file_v2")
@@ -12,7 +14,7 @@ CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 300
 INITIAL_TOP_K = 20
 RERANKED_TOP_K = 6
-RELEVANCE_THRESHOLD = -5.0  # ms-marco scores are usually logits, > 0 is very good, -5 is a relaxed cutoff
+RELEVANCE_THRESHOLD = -8.0  # ms-marco scores are usually logits, > 0 is very good, -5 is a relaxed cutoff
 
 # Initialize clients lazily to save memory on startup
 _chroma_client = None
@@ -22,6 +24,61 @@ from chromadb.utils import embedding_functions
 
 # Multilingual Embedding Function for ChromaDB
 multilingual_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="paraphrase-multilingual-MiniLM-L12-v2")
+
+def needs_translation(text: str) -> str:
+    """Detects Telugu or Hindi (Devanagari) script and returns the language name."""
+    for ch in text:
+        code = ord(ch)
+        if 0x0C00 <= code <= 0x0C7F:   # Telugu block
+            return "Telugu"
+        if 0x0900 <= code <= 0x097F:   # Devanagari (Hindi) block
+            return "Hindi"
+    return ""
+
+TRANSLATION_MODEL = "llama3:latest"
+
+async def translate_to_english(text: str, model: str = TRANSLATION_MODEL) -> str:
+    """Translates Telugu/Hindi query to English using aya:8b before retrieval."""
+    payload = {
+        "model": TRANSLATION_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a professional translator. Translate the user's message to English. Respond with ONLY the English translation — no quotes, no explanation, no preamble."},
+            {"role": "user", "content": text}
+        ],
+        "stream": False,
+        "options": {"temperature": 0.0}
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:11434/api/chat", json=payload, timeout=60.0)
+            response.raise_for_status()
+            data = response.json()
+            translated = data.get("message", {}).get("content", "").strip()
+            return translated if translated else text
+    except Exception as e:
+        return text  # fall back to original query if translation fails
+
+async def translate_from_english(text: str, target_language: str) -> str:
+    """Translates an English answer back to the target language using aya:8b."""
+    payload = {
+        "model": TRANSLATION_MODEL,
+        "messages": [
+            {"role": "system", "content": f"You are a professional translator. Translate the following English text to {target_language}. Respond with ONLY the {target_language} translation — no quotes, no explanation, no English words mixed in."},
+            {"role": "user", "content": text}
+        ],
+        "stream": False,
+        "options": {"temperature": 0.0}
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:11434/api/chat", json=payload, timeout=60.0)
+            response.raise_for_status()
+            data = response.json()
+            translated = data.get("message", {}).get("content", "").strip()
+            return translated if translated else text
+    except Exception:
+        return text  # fall back to English if translation fails
+
 
 def get_chroma_client():
     global _chroma_client
@@ -39,33 +96,44 @@ def get_cross_encoder():
 
 def extract_text_from_docx(file_path):
     doc = docx.Document(file_path)
-    full_text = []
+    parts = []
     for para in doc.paragraphs:
-        if para.text.strip():
-            full_text.append(para.text.strip())
-    return "\n".join(full_text)
+        text = para.text.strip()
+        if not text:
+            continue
+        if para.style.name.startswith("Heading"):
+            parts.append(f"\n\n## SECTION: {text}\n")
+        else:
+            parts.append(text)
+    return "\n".join(parts)
 
 def create_overlapping_chunks(text, chunk_size, overlap):
     chunks = []
-    start = 0
-    text_len = len(text)
-    
-    while start < text_len:
-        end = start + chunk_size
-        
-        # Adjust end to nearest word boundary if not at the end of text
-        if end < text_len:
-            while end > start and text[end] not in [' ', '\n', '\t']:
-                end -= 1
-            if end == start: # Word is longer than chunk size, just cut it
-                end = start + chunk_size
-                
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
+    sections = text.split("## SECTION: ")
+    for idx, section_text in enumerate(sections):
+        section_text = section_text.strip()
+        if not section_text:
+            continue
             
-        start = end - overlap
+        section_title = section_text.split("\n")[0][:100] if idx > 0 else "Introduction"
+        full_text = f"[{section_title}] " + section_text if idx > 0 else section_text
         
+        start = 0
+        text_len = len(full_text)
+        
+        while start < text_len:
+            end = start + chunk_size
+            if end < text_len:
+                while end > start and full_text[end] not in [' ', '\n', '\t']:
+                    end -= 1
+                if end == start:
+                    end = start + chunk_size
+            
+            chunk = full_text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+                
+            start = end - overlap
     return chunks
 
 def ingest_file_v2(file_path, filename):
@@ -86,16 +154,17 @@ def ingest_file_v2(file_path, filename):
     chunks = create_overlapping_chunks(text, CHUNK_SIZE, CHUNK_OVERLAP)
     
     client = get_chroma_client()
-    collection = client.get_or_create_collection(
-        name="rrams_multilingual_v1",
-        embedding_function=multilingual_ef
-    )
     
-    # Optional: Clear old data for this filename to prevent duplicates on re-upload
+    # Wipe the entire collection to ensure strict single-document mode
     try:
-        collection.delete(where={"filename": filename})
+        client.delete_collection(name="rrams_multilingual_v2")
     except Exception:
         pass
+        
+    collection = client.get_or_create_collection(
+        name="rrams_multilingual_v2",
+        embedding_function=multilingual_ef
+    )
         
     ids = [str(uuid.uuid4()) for _ in chunks]
     metadatas = [{"filename": filename, "chunk_index": i} for i in range(len(chunks))]
@@ -113,7 +182,7 @@ def retrieve_and_rerank(query):
     """Retrieves top K chunks, reranks them, and applies threshold."""
     client = get_chroma_client()
     collection = client.get_or_create_collection(
-        name="rrams_multilingual_v1",
+        name="rrams_multilingual_v2",
         embedding_function=multilingual_ef
     )
     
