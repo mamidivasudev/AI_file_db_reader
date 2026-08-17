@@ -622,11 +622,7 @@ async def ask_your_query(
 
         # 1. Identity & Source Protection for Old API
         question_lower = question.lower()
-<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
-=======
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             import uuid
             return AskFilesResponse(
@@ -714,11 +710,7 @@ async def ask_your_query_stream_endpoint(
 
         # 1. Identity & Source Protection for Old API Stream
         question_lower = question.lower()
-<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
-=======
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 import uuid
@@ -797,11 +789,7 @@ async def ask_your_query_stream_endpoint(
 # These run side-by-side without disturbing V1 functionality
 # ==============================================================================
 
-<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/upload-file")
-=======
-@app.post("/v2/upload-file")
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_upload_file_endpoint(file: UploadFile = File(...)):
     import v2_rag_engine
     try:
@@ -825,11 +813,7 @@ async def v2_upload_file_endpoint(file: UploadFile = File(...)):
         logger.error("V2 Upload Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/ask-your-query")
-=======
-@app.post("/v2/ask-your-query")
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_ask_your_query(
     question: str = Form(...),
     model: Optional[str] = Form("llama3:latest"),
@@ -845,11 +829,7 @@ async def v2_ask_your_query(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
-<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
-=======
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             return AskFilesResponse(
                 session_id=session_id or str(uuid.uuid4()),
@@ -874,7 +854,6 @@ async def v2_ask_your_query(
         context_text = "\n\n---\n\n".join(relevant_chunks)
         system_prompt = f"""You are the official AI Assistant for the Rajasthan Public Works Department (PWD).
 
-<<<<<<< Updated upstream:fastapi_app.py
 === FACTS ===
 {context_text}
 === END FACTS ===
@@ -885,18 +864,6 @@ CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
 - If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: "This detail is currently not available in our system."
 - You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.
 - Never use introductory phrases like "According to the FACTS", "Based on the context", or "The document mentions". Start directly with the answer.
-=======
-=== SYSTEM DATA ===
-{context_text}
-=== END SYSTEM DATA ===
-
-You must answer the user's question using ONLY the SYSTEM DATA above.
-
-CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
-- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: "This detail is currently not available in our system."
-- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.
-- Never use introductory phrases like "According to the system data", "Based on the context", or "The document mentions". Start directly with the answer.
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 - Do not explain your reasoning (except to show math). Just output the final answer."""
 
         import time
@@ -929,11 +896,7 @@ CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):
         logger.error("V2 Ask Query Error: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-<<<<<<< Updated upstream:fastapi_app.py
 @app.post("/ask-your-query-stream")
-=======
-@app.post("/v2/ask-your-query-stream")
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
 async def v2_ask_your_query_stream(
     request: Request,
     question: str = Form(...),
@@ -953,11 +916,7 @@ async def v2_ask_your_query_stream(
     try:
         # 1. Identity & Source Protection (Intercept Conversational Questions)
         question_lower = question.lower()
-<<<<<<< Updated upstream:fastapi_app.py
         identity_triggers = ["who are you", "what are you", "where do you get", "source of", "source for", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
-=======
-        identity_triggers = ["who are you", "what are you", "where do you get", "source of", "your source", "how do you know", "where are you getting", "how u getting", "how are you getting", "getting information", "from which", "from where", "which document"]
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         if any(trigger in question_lower for trigger in identity_triggers):
             async def identity_generator():
                 session = session_id or str(uuid.uuid4())
@@ -981,7 +940,6 @@ async def v2_ask_your_query_stream(
         # 4. Build Optimized Prompt
         prompt = MULTILINGUAL_PROMPT_TEMPLATE
         for chunk in relevant_chunks:
-<<<<<<< Updated upstream:fastapi_app.py
             prompt += f"FACTS (Score: {chunk['score']}):\n{chunk['text']}\n\n"
             
         prompt += f"USER QUESTION: {question}\n"
@@ -990,16 +948,6 @@ async def v2_ask_your_query_stream(
         prompt += "- If the exact answer or the raw data needed to answer is not in the FACTS, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
         prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the FACTS. If you calculate a total, briefly show your math.\n"
         prompt += "- Never use introductory phrases like \"According to the FACTS\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
-=======
-            prompt += f"SYSTEM DATA (Score: {chunk['score']}):\n{chunk['text']}\n\n"
-            
-        prompt += f"USER QUESTION: {question}\n"
-        prompt += "You must answer the user's question using ONLY the SYSTEM DATA above.\n\n"
-        prompt += "CRITICAL OUTPUT CONSTRAINTS (YOU MUST OBEY THESE OR FAIL):\n"
-        prompt += "- If the exact answer or the raw data needed to answer is not in the SYSTEM DATA, you must output exactly this string and nothing else: \"This detail is currently not available in our system.\"\n"
-        prompt += "- You MAY perform mathematical calculations (like adding totals) ONLY IF the raw numbers are explicitly provided in the SYSTEM DATA. If you calculate a total, briefly show your math.\n"
-        prompt += "- Never use introductory phrases like \"According to the system data\", \"Based on the context\", or \"The document mentions\". Start directly with the answer.\n"
->>>>>>> Stashed changes:Database_reader_ai/fastapi_app.py
         prompt += "- Do not explain your reasoning (except to show math). Just output the final answer."
 
         # 5. Stream from Ollama via httpx
