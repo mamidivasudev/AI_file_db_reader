@@ -47,11 +47,23 @@ from session_manager import (
 )
 from file_reader import read_project
 from search_engine import search_files
+from cryptography.fernet import Fernet
 # ─────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production")
 ALGORITHM = "HS256"
+
+ENCRYPTION_KEY_FILE = "encryption_secret.key"
+
+def get_cipher():
+    if not os.path.exists(ENCRYPTION_KEY_FILE):
+        key = Fernet.generate_key()
+        with open(ENCRYPTION_KEY_FILE, "wb") as key_file:
+            key_file.write(key)
+    with open(ENCRYPTION_KEY_FILE, "rb") as key_file:
+        key = key_file.read()
+    return Fernet(key)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mssql_api")
@@ -1099,11 +1111,14 @@ def save_admin_db_config(req: AdminDbConfigRequest):
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid table format: {t}. Must be 'schema.table'")
 
+    cipher = get_cipher()
+    encrypted_password = cipher.encrypt(req.password.encode("utf-8")).decode("utf-8")
+
     config_data = {
         "server": req.server,
         "database": req.database,
         "username": req.username,
-        "password": req.password,
+        "password": encrypted_password,
         "auth_mode": req.auth_mode,
         "driver": req.driver,
         "tables": parsed_tables
@@ -1138,12 +1153,18 @@ def check_db_status():
         with open(ADMIN_CONFIG_FILE, "r", encoding="utf-8") as f:
             config = json.load(f)
             
+        cipher = get_cipher()
+        try:
+            decrypted_password = cipher.decrypt(config["password"].encode("utf-8")).decode("utf-8")
+        except Exception:
+            decrypted_password = config["password"]
+            
         conn = connect_mssql(
             server=config["server"],
             database=config["database"],
             auth_mode=config.get("auth_mode", "SQL Server Authentication"),
             username=config["username"],
-            password=config["password"],
+            password=decrypted_password,
             driver=config.get("driver", "ODBC Driver 17 for SQL Server")
         )
         conn.close()
@@ -1170,12 +1191,18 @@ def ask_global_db_query(request: GlobalQuestionRequest):
     conn = None
     try:
         logger.info(f"Connecting to {config['server']} - {config['database']}...")
+        cipher = get_cipher()
+        try:
+            decrypted_password = cipher.decrypt(config["password"].encode("utf-8")).decode("utf-8")
+        except Exception:
+            decrypted_password = config["password"]
+            
         conn = connect_mssql(
             server=config["server"],
             database=config["database"],
             auth_mode=config.get("auth_mode", "SQL Server Authentication"),
             username=config["username"],
-            password=config["password"],
+            password=decrypted_password,
             driver=config.get("driver", "ODBC Driver 17 for SQL Server")
         )
         
@@ -1218,3 +1245,71 @@ def ask_global_db_query(request: GlobalQuestionRequest):
         if conn:
             conn.close()
 # -------------------------------
+# Business Rules Admin APIs
+# -------------------------------
+
+class GenerateRuleRequest(BaseModel):
+    question: str
+    sql: str
+
+class SaveRulesRequest(BaseModel):
+    database_identifier: str
+    rules_text: str
+
+@app.post("/admin/generate-rule")
+def admin_generate_rule(req: GenerateRuleRequest):
+    prompt = f"""You are a database business logic expert. 
+Given an Example Question and the Correct SQL Query that answers it, extract the underlying business rule or logic into a single, concise English sentence.
+For example, if the SQL uses "WHERE AADT > 10000", the rule might be "Busiest roads means AADT > 10000."
+Do NOT explain the SQL. Return ONLY the rule itself.
+
+Example Question:
+{req.question}
+
+Correct SQL Query:
+{req.sql}
+"""
+    try:
+        rule = ask_ollama(prompt, model=STATIC_MODEL_NAME).strip()
+        return {"generated_rule": rule}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/get-business-rules")
+def admin_get_business_rules(database_identifier: str):
+    import json
+    import os
+    rules_file = "business_rules.json"
+    if not os.path.exists(rules_file):
+        return {"rules_text": ""}
+        
+    try:
+        with open(rules_file, "r", encoding="utf-8") as f:
+            all_rules = json.load(f)
+            
+        return {"rules_text": all_rules.get(database_identifier, "")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read rules: {e}")
+
+@app.post("/admin/save-business-rules")
+def admin_save_business_rules(req: SaveRulesRequest):
+    import json
+    import os
+    rules_file = "business_rules.json"
+    all_rules = {}
+    
+    if os.path.exists(rules_file):
+        try:
+            with open(rules_file, "r", encoding="utf-8") as f:
+                all_rules = json.load(f)
+        except Exception:
+            pass # File might be corrupted, we'll overwrite/fix
+            
+    all_rules[req.database_identifier] = req.rules_text
+    
+    try:
+        with open(rules_file, "w", encoding="utf-8") as f:
+            json.dump(all_rules, f, indent=4)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save rules: {e}")
